@@ -1,0 +1,68 @@
+/* =========================================================
+   TanyaBukan — DESIGN TOKENS
+   Satu sumber kebenaran untuk warna, tipe, spacing, radius.
+   ========================================================= */
+:root {
+  /* ---- Warna ---- */
+  --color-bg: #FAFAFA;
+  --color-surface: #FFFFFF;
+  --color-surface-2: #F4F4F5;
+  --color-border: #E4E4E7;
+  --color-border-strong: #D4D4D8;
+
+  --color-text: #18181B;
+  --color-text-secondary: #71717A;
+  --color-text-faint: #737373; /* ±4,7:1 di atas putih (AA); sebelumnya #A1A1AA ±2,6:1 */
+
+  --color-accent: #4F46E5;
+  --color-accent-hover: #4338CA;
+  --color-accent-soft: #EEF2FF;
+  --color-accent-border: #C7D2FE;
+
+  --color-success: #10B981;
+  --color-error: #EF4444;
+  --color-error-soft: #FEF2F2;
+  --color-error-border: #FECACA;
+  --color-warning: #F59E0B;
+
+  --color-citation-bg: #EEF2FF;
+  --color-citation-text: #4338CA;
+
+  /* ---- Tipografi ---- */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --text-body: 14px;
+  --text-secondary: 13px;
+  --text-caption: 12px;
+  --text-heading: 16px;
+  --text-title: 20px;
+  --leading: 1.6;
+  --leading-tight: 1.3;
+
+  /* ---- Spacing (grid 4px) ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ---- Border radius ---- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+
+  /* ---- Bayangan (minimal) ---- */
+  --shadow-modal: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-toast: 0 4px 12px rgba(0, 0, 0, 0.10);
+  --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.06);
+
+  /* ---- Transisi ---- */
+  --transition: 180ms ease-out;
+
+  /* ---- Layout ---- */
+  --sidebar-width: 300px;
+  --header-height: 56px;
+}

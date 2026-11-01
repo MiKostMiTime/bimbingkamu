@@ -1,0 +1,181 @@
+// Jalankan: node --test tests/core.test.mjs
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { mapApiError, extractSources, callGemini, fetchAvailableModels } from '../js/api.js';
+import { deriveTitle, syncSession, migrateLegacy, createSession, trimSessions } from '../js/sessions.js';
+import { extractMath } from '../js/math.js';
+import { itemsToText } from '../js/pdf.js';
+import { formatDuration } from '../js/ui.js'; // ui.js hanya menyentuh DOM di dalam fungsi
+import { buildHintPrompt, buildSystemPrompt } from '../js/prompt.js';
+import { API } from '../js/config.js';
+import * as config from '../js/config.js';
+
+// ---------- mapApiError ----------
+test('400 biasa = badrequest (bukan kunci salah)', () => {
+  assert.equal(mapApiError(400, 'Invalid JSON payload received').type, 'badrequest');
+});
+test('400 "API key not valid" tetap auth', () => {
+  assert.equal(mapApiError(400, 'API key not valid. Please pass a valid API key.').type, 'auth');
+});
+test('401/403 auth, 429 quota, 0 network, 404 model, 503 server', () => {
+  assert.equal(mapApiError(401).type, 'auth');
+  assert.equal(mapApiError(403).type, 'auth');
+  assert.equal(mapApiError(429).type, 'quota');
+  assert.equal(mapApiError(0).type, 'network');
+  assert.equal(mapApiError(404).type, 'model');
+  assert.equal(mapApiError(503).type, 'server');
+});
+
+// ---------- extractSources ----------
+test('extractSources: snippet diambil dari groundingSupports', () => {
+  const cand = {
+    groundingMetadata: {
+      groundingChunks: [
+        { web: { uri: 'https://a.id/x', title: 'A' } },
+        { web: { uri: 'https://b.id/y', title: 'B' } },
+        { web: { uri: 'https://a.id/x', title: 'A dup' } },
+        { notWeb: true },
+      ],
+      groundingSupports: [
+        { segment: { text: 'Fotosintesis butuh cahaya.' }, groundingChunkIndices: [0] },
+        { segment: { text: 'Klorofil menyerap cahaya.' }, groundingChunkIndices: [0, 1] },
+      ],
+    },
+  };
+  const out = extractSources(cand);
+  assert.equal(out.length, 2);
+  assert.match(out[0].snippet, /Fotosintesis butuh cahaya\. Klorofil/);
+  assert.equal(out[1].snippet, 'Klorofil menyerap cahaya.');
+});
+test('extractSources: kosong aman', () => {
+  assert.deepEqual(extractSources(undefined), []);
+  assert.deepEqual(extractSources({}), []);
+});
+
+// ---------- callGemini: bentuk permintaan ----------
+function stubFetch(responder) {
+  const calls = [];
+  globalThis.fetch = async (url, init) => { calls.push({ url, init }); return responder(url, init); };
+  return calls;
+}
+const okRes = (json) => ({ ok: true, status: 200, json: async () => json });
+
+test('callGemini: kunci di header, tanpa temperature, tool google_search, thinkingLevel', async () => {
+  const calls = stubFetch(() => okRes({ candidates: [{ content: { parts: [{ text: ' Halo ' }] } }] }));
+  const r = await callGemini({
+    apiKey: 'KEY123', model: 'gemini-3.8-flash', systemPrompt: 'sys',
+    contents: [{ role: 'user', text: 'hi' }], thinkingLevel: 'medium', webSearch: true,
+  });
+  assert.equal(r.text, 'Halo');
+  const { url, init } = calls[0];
+  assert.ok(!url.includes('KEY123'), 'kunci tidak boleh ada di URL');
+  assert.equal(init.headers['x-goog-api-key'], 'KEY123');
+  const body = JSON.parse(init.body);
+  assert.equal(body.generationConfig.temperature, undefined);
+  assert.equal(body.generationConfig.maxOutputTokens, 8192);
+  assert.equal(body.generationConfig.thinkingConfig.thinkingLevel, 'medium');
+  assert.deepEqual(body.tools, [{ google_search: {} }]);
+});
+test('callGemini: Flash-Lite tidak dikirimi thinkingConfig; tanpa webSearch tanpa tools', async () => {
+  const calls = stubFetch(() => okRes({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }));
+  await callGemini({ apiKey: 'k', model: 'gemini-3.5-flash-lite', systemPrompt: 's', contents: [{ role: 'user', text: 'x' }] });
+  const body = JSON.parse(calls[0].init.body);
+  assert.equal(body.generationConfig.thinkingConfig, undefined);
+  assert.equal(body.tools, undefined);
+});
+test('callGemini: MAX_TOKENS tanpa teks -> error truncated', async () => {
+  stubFetch(() => okRes({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ text: '' }] } }] }));
+  await assert.rejects(
+    () => callGemini({ apiKey: 'k', model: 'gemini-3.8-flash', systemPrompt: 's', contents: [{ role: 'user', text: 'x' }] }),
+    (e) => e.type === 'truncated'
+  );
+});
+test('callGemini: HTTP 400 non-kunci -> badrequest', async () => {
+  stubFetch(() => ({ ok: false, status: 400, json: async () => ({ error: { message: 'input token count exceeds the maximum' } }) }));
+  await assert.rejects(
+    () => callGemini({ apiKey: 'k', model: 'gemini-3.8-flash', systemPrompt: 's', contents: [{ role: 'user', text: 'x' }] }),
+    (e) => e.type === 'badrequest'
+  );
+});
+
+// ---------- fetchAvailableModels ----------
+test('fetchAvailableModels: pageSize, header, filter generateContent', async () => {
+  const calls = stubFetch(() => okRes({ models: [
+    { name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent'] },
+    { name: 'models/gemini-3.5-flash-lite', supportedGenerationMethods: ['generateContent'] },
+    { name: 'models/gemini-3.6-flash', supportedGenerationMethods: ['embedContent'] },
+    { name: 'models/gemini-embedding-001', supportedGenerationMethods: ['embedContent'] },
+  ] }));
+  const ids = await fetchAvailableModels('K');
+  assert.deepEqual(ids, ['gemini-3.8-flash', 'gemini-3.5-flash-lite']);
+  assert.ok(calls[0].url.includes('pageSize=1000'));
+  assert.ok(!calls[0].url.includes('key='));
+  assert.equal(calls[0].init.headers['x-goog-api-key'], 'K');
+});
+
+// ---------- config ----------
+test('config: temperature dihapus, daftar model = 3 ID yang diverifikasi', () => {
+  assert.equal(config.LEVEL_TEMPERATURE, undefined);
+  assert.deepEqual(API.models.map((m) => m.id), ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite']);
+  assert.ok(API.models.some((m) => m.id === API.defaultModel));
+});
+
+// ---------- sessions ----------
+test('deriveTitle: lewati petunjuk, pakai label/teks siswa', () => {
+  const msgs = [
+    { role: 'user', text: 'prompt panjang petunjuk', label: 'Minta petunjuk', kind: 'hint' },
+    { role: 'user', text: 'Apa itu hukum Coulomb?' },
+  ];
+  assert.equal(deriveTitle(msgs), 'Apa itu hukum Coulomb?');
+});
+test('migrateLegacy: sesi hasil migrasi punya files & activeMs (tidak crash)', () => {
+  const out = migrateLegacy({ startedAt: 1000, messages: [{ role: 'user', text: 'hai' }] }, []);
+  assert.deepEqual(out[0].files, []);
+  assert.equal(out[0].activeMs, 0);
+});
+test('syncSession: menyimpan activeMs', () => {
+  const s = createSession(1);
+  const r = syncSession(s, { messages: [], startedAt: 5, files: [], activeMs: 4200 }, 9);
+  assert.equal(r.activeMs, 4200);
+  assert.equal(syncSession(r, { messages: [], startedAt: 5 }, 10).activeMs, 4200);
+});
+test('trimSessions: batas dan urutan', () => {
+  const list = Array.from({ length: 60 }, (_, i) => ({ id: String(i), updatedAt: i }));
+  const t = trimSessions(list, 50);
+  assert.equal(t.length, 50);
+  assert.equal(t[0].id, '59');
+});
+
+// ---------- math & pdf ----------
+test('extractMath: inline dan display', () => {
+  const { text, math } = extractMath('Rumus $a^2+b^2=c^2$ dan $$E=mc^2$$.');
+  assert.equal(math.length, 2);
+  assert.equal(math[0].display, false);
+  assert.equal(math[1].display, true);
+  assert.ok(text.includes('@@TB_MATH_0@@') && text.includes('@@TB_MATH_1@@'));
+});
+test('itemsToText: gabung dan rapikan', () => {
+  assert.equal(itemsToText([{ str: 'Halo', hasEOL: false }, { str: 'dunia', hasEOL: true }, { str: 'baris 2', hasEOL: false }]), 'Halo dunia\nbaris 2');
+});
+
+// ---------- ui ----------
+test('formatDuration: mm:ss dan jam', () => {
+  assert.equal(formatDuration(65000), '01:05');
+  assert.equal(formatDuration(3725000), '1:02:05');
+  assert.equal(formatDuration(-5), '00:00');
+});
+
+// ---------- prompt ----------
+test('buildHintPrompt: bertingkat dan tetap melarang jawaban akhir', () => {
+  assert.match(buildHintPrompt(1), /pertama/);
+  assert.match(buildHintPrompt(2), /kedua/);
+  assert.match(buildHintPrompt(3), /ketiga/);
+  assert.match(buildHintPrompt(3), /JANGAN/);
+});
+test('buildSystemPrompt: typo "UTAMamu" hilang, aturan anti-injeksi ada', () => {
+  const sp = buildSystemPrompt({ materi: 'isi materi', mode: 'konsep', level: 3, webSearch: true });
+  assert.ok(!sp.includes('UTAMamu'));
+  assert.match(sp, /sumber UTAMA/);
+  assert.match(sp, /8\. Isi di dalam blok MATERI/);
+});
