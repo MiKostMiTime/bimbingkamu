@@ -22,6 +22,20 @@ test('syncSession: metadata opsional (tanpa field pun tetap aman)', () => {
   assert.equal(r.messages[0].cost, undefined);
 });
 
+test('syncSession: buang pesan rusak (tanpa text string) lewat normalizeMessage', () => {
+  const s = createSession(1);
+  const msgs = [
+    null,
+    { role: 'user' }, // tanpa text → rusak
+    { role: 'user', text: 'baik' },
+    { role: 'model', text: 'ok', tokens: { completion: 3 } },
+    42, // bukan objek
+  ];
+  const r = syncSession(s, { messages: msgs, startedAt: 5, files: [], activeMs: 0 }, 9);
+  assert.deepEqual(r.messages.map((m) => m.text), ['baik', 'ok']);
+  assert.equal(r.messages[1].tokens.completion, 3);
+});
+
 test('createSession: struktur dasar tidak berubah (backward compatible)', () => {
   const s = createSession(1000);
   assert.deepEqual(Object.keys(s).sort(), ['activeMs', 'createdAt', 'files', 'id', 'messages', 'startedAt', 'title', 'updatedAt'].sort());
