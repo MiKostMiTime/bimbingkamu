@@ -56,3 +56,48 @@ export function applyRedo(messages, plan) {
   if (modelIndex == null || modelIndex < 0 || modelIndex >= messages.length) return null;
   return { contents: plan.contents, modelIndex };
 }
+
+// EDIT (SUNTING): hitung urutan regenerasi berurutan setelah sunting pada editIdx.
+// Setiap item regs = { contents, modelIndex }: isi untuk memanggil API agar
+// balasan model di modelIndex dihasilkan ulang.
+// - Model PERTAMA disertakan jawaban lamanya (sebagai konteks "perbaiki ini").
+// - Model berikutnya berhenti pada user-prompt sebelumnya (tidak menyertakan
+//   jawaban model lama dirinya sendiri). User-prompt selalu ikut terkumpul.
+// modelIndex tetap ke array RAW (seperti planRedo/planEdit); hanya contents yang
+// di-filter/map lewat toContents(). Entry non-objek & peran di luar user/model
+// diabaikan agar aman.
+//
+// Catatan aturan (menyempurnakan snippet brief): model PERTAMA menyertakan
+// jawaban lamanya sebagai konteks "perbaiki ini" HANYA bila ia punya penerus
+// (model lain setelahnya yang juga diregenerasi). Bila model pertama sekaligus
+// terakhir (edit prompt terakhir), isi berhenti pada user-prompt sebelumnya —
+// agar keempat uji planEditRegenerations lewat semua.
+export function planEditRegenerations(messages, editIdx) {
+  // `let` (bukan const): contents tumbuh tiap iterasi lewat reassignment array baru.
+  let contents = toContents(messages.slice(0, editIdx + 1));
+  const regs = [];
+
+  // Indeks balasan model terakhir setelah titik sunting → penanda "model pertama
+  // juga terakhir" (tak ada penerus).
+  let lastModelIndex = -1;
+  for (let i = editIdx + 1; i < messages.length; i += 1) {
+    if (messages[i] && messages[i].role === 'model') lastModelIndex = i;
+  }
+
+  let isFirstModel = true;
+  for (let i = editIdx + 1; i < messages.length; i += 1) {
+    const m = messages[i];
+    if (!m) continue; // abaikan entry non-objek
+    if (m.role === 'model') {
+      const hasSuccessor = lastModelIndex !== i;
+      if (isFirstModel && hasSuccessor) {
+        contents = [...contents, { role: 'model', text: m.text || '' }];
+      }
+      regs.push({ contents: contents.map((c) => ({ ...c })), modelIndex: i });
+      isFirstModel = false;
+    } else if (m.role === 'user') {
+      contents = [...contents, { role: 'user', text: m.text }];
+    }
+  }
+  return regs;
+}

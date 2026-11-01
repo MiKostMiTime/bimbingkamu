@@ -189,6 +189,76 @@ export function addUserMessage(root, text) {
   return msg;
 }
 
+// Ikon pensil untuk tombol "Sunting" (edit) di bubble user.
+const EDIT_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+
+// Bubble user dengan tombol "Sunting". Klik → ganti teks dengan textarea inline
+// + bar Simpan/Batal. Saat Simpan, panggil onEdit(newText). editIdx ditangkap
+// caller (app.js) lewat closure; chat.js hanya perlu membarui tampilan teks bubble.
+export function addUserMessageWithEdit(root, text, { onEdit } = {}) {
+  removeEmptyState(root);
+  const msg = document.createElement('div');
+  msg.className = 'msg msg--user';
+  msg.appendChild(avatar('K'));
+  const { col, content } = makeColumn('Kamu');
+  content.textContent = text;
+  content.dataset.original = text;
+
+  if (typeof onEdit === 'function') {
+    const openEditor = () => {
+      // Ganti isi bubble dengan textarea + bar aksi.
+      content.textContent = '';
+      const ta = document.createElement('textarea');
+      ta.className = 'msg__edit';
+      ta.value = content.dataset.original;
+      content.appendChild(ta);
+      ta.focus();
+      ta.select();
+      // Hapus bar lama, buat bar aksi (Sunting & regenerasi / Batal).
+      let bar = col.querySelector('.msg__actions');
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.className = 'msg__actions';
+        col.appendChild(bar);
+      }
+      bar.innerHTML = '';
+      const simpan = document.createElement('button');
+      simpan.type = 'button';
+      simpan.className = 'btn btn--primary btn--sm';
+      simpan.textContent = 'Sunting & regenerasi';
+      const batal = document.createElement('button');
+      batal.type = 'button';
+      batal.className = 'btn btn--ghost btn--sm';
+      batal.textContent = 'Batal';
+      const closeEditor = () => {
+        content.textContent = content.dataset.original;
+        if (bar.parentElement) bar.remove();
+      };
+      simpan.addEventListener('click', async () => {
+        const newText = ta.value.trim();
+        if (!newText) return;
+        content.dataset.original = newText;
+        await onEdit(newText); // app.js membarui state.messages + regenerasi ke belakang
+        closeEditor(); // Kembalikan bubble ke mode tampilkan setelah regenerasi.
+      });
+      batal.addEventListener('click', closeEditor);
+      bar.appendChild(simpan);
+      bar.appendChild(batal);
+    };
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'msg__action btn btn--ghost btn--sm';
+    btn.setAttribute('aria-label', 'Sunting pertanyaan');
+    btn.innerHTML = EDIT_ICON;
+    btn.addEventListener('click', openEditor);
+    col.appendChild(btn);
+  }
+  msg.appendChild(col);
+  root.appendChild(msg);
+  return msg;
+}
+
 // ===== PESAN MODEL =====
 // Membuat bubble kosong siap diisi; kembalikan { msg, content, col }.
 // `col` = .msg__col tempat menempati tombol aksi (mis. regenerasi). Pemanggil

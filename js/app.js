@@ -5,7 +5,7 @@
 import { API, STORAGE_KEYS, getLevelLabel } from './config.js';
 import { storage } from './storage.js';
 import { callGemini, fetchAvailableModels } from './api.js';
-import { planRedo, applyRedo } from './redo.js';
+import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
 import { extractPdfText } from './pdf.js';
 import { extractDocxText } from './docx.js';
 import { buildSystemPrompt, buildOpeningPrompt, buildHintPrompt } from './prompt.js';
@@ -18,6 +18,7 @@ import {
 } from './sessions.js';
 import {
   addUserMessage,
+  addUserMessageWithEdit,
   addModelMessage,
   addNotice,
   showTyping,
@@ -537,7 +538,16 @@ async function sendUserMessage(rawText, opts = {}) {
   if (isMobile()) closeSidebar();
 
   state.messages.push({ role: 'user', text, label: opts.label, kind: opts.kind });
-  const userEl = addUserMessage(dom.messages, opts.label || text);
+  // Tangkap index user yang baru pushed; bubble hasil ketik langsung diberi
+  // tombol "Sunting" (hanya ini yang bisa disunting — restore riwayat tetap plain).
+  const editIdx = state.messages.length - 1;
+  const userEl = addUserMessageWithEdit(dom.messages, opts.label || text, {
+    onEdit: async (newText) => {
+      // Barui teks user di state + bubble, lalu regenerasi ke belakang.
+      if (state.messages[editIdx]) state.messages[editIdx].text = newText;
+      await regenerateFrom(editIdx);
+    },
+  });
   if (fromInput) {
     dom.input.value = '';
     autosizeInput();
@@ -669,6 +679,67 @@ async function regenerateLast() {
   } catch (err) {
     removeTyping(typing);
     state.busy = false;
+    const text = errorDisplayText(err);
+    addNotice(dom.messages, text, 'error');
+    showToast(text, 'error');
+    logApiError(err);
+  } finally {
+    updateComposer();
+    saveActiveSession();
+  }
+}
+
+// ===== RERENDER BUBBLE MODEL DARI SUATU TITIK (EDIT) =====
+// MVP: barikan seluruh bubble chat, lalu render ulang seluruh state.messages dari
+// startIdx ke akhir. Setiap bubble model dibangun ulang lengkap (teks + sumber +
+// tombol "Regenerasi" Task 3), sehingga sunting pesan menjaga konsistensi UI.
+function rerenderModelMessagesFrom(startIdx) {
+  clearMessages(dom.messages);
+  for (const m of state.messages) {
+    if (m.hidden) continue;
+    if (m.role === 'user') addUserMessage(dom.messages, m.label || m.text);
+    else if (m.role === 'model') {
+      const built = addModelMessage(dom.messages);
+      renderRich(built.content, m.text || '');
+      renderSources(built.msg, m.sources || [], { onSave: () => saveWebMateri(m.sources || []) });
+      addRedoButton(built.col, regenerateLast);
+    } else addNotice(dom.messages, m.text, m.role);
+  }
+}
+
+// EDIT (SUNTING): sunting user pada editIdx → regenerasi berurutan semua balasan
+// model setelahnya. Setiap balasan dipanggil ulang lewat callGemini dengan isi
+// berjalan (lihat planEditRegenerations), lalu bubble-nya dire-render sekaligus.
+async function regenerateFrom(editIdx) {
+  if (state.busy) { showToast('Tunggu balasan tutor selesai dulu, ya.', 'info'); return; }
+  const regs = planEditRegenerations(state.messages, editIdx);
+  if (!regs.length) { showToast('Tidak ada balasan untuk diregenerasi.', 'info'); return; }
+
+  state.busy = true;
+  updateComposer();
+  scrollToEnd(dom.chatScroll, true);
+
+  // systemPrompt diambil ulang tiap panggilan agar selalu sesuai setting terkini.
+  const systemPrompt = () => buildSystemPrompt({
+    materi: buildMateri(), mode: state.settings.mode,
+    level: state.settings.level, webSearch: state.settings.webSearch,
+  });
+
+  try {
+    for (const reg of regs) {
+      // callGemini → { text, sources } (tanpa token); param webSearch, bukan grounding.
+      const { text: reply, sources } = await callGemini({
+        apiKey: state.apiKey, model: state.settings.model, systemPrompt: systemPrompt(),
+        contents: reg.contents, thinkingLevel: thinkingLevelFor(), webSearch: state.settings.webSearch,
+      });
+      const prev = state.messages[reg.modelIndex];
+      // cost = undefined sementara (Task 8); text + sources ikut.
+      state.messages[reg.modelIndex] = { ...prev, text: reply, sources };
+    }
+    rerenderModelMessagesFrom(editIdx);
+    state.busy = false;   // <-- reset di jalur sukses (poin penting)
+  } catch (err) {
+    state.busy = false;   // <-- reset juga di jalur error
     const text = errorDisplayText(err);
     addNotice(dom.messages, text, 'error');
     showToast(text, 'error');
