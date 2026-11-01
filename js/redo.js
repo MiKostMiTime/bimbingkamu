@@ -1,8 +1,12 @@
-// js/redo.js
-// Fungsi murni untuk merencanakan regenerasi balasan (redo) & sunting pesan (edit).
+// =========================================================
+// TanyaBukan — REDO / EDIT (FUNGSI MURNI)
+// Merencanakan regenerasi balasan (redo) & sunting pesan (edit).
 // Tidak menyentuh DOM; hanya memotong array pesan → {role, text}.
+// Dipakai app.js untuk tombol "Regenerasi" & "Sunting".
+// =========================================================
 
-// Mirip buildContents() di app.js: saring role user|model, ubah ke {role, text}.
+// Mirip buildContents() di app.js: saro role user|model, ubah ke {role, text}.
+// Guard m && agar entry non-objek (mis. null) tidak merusak pemetaan.
 function toContents(list) {
   return list
     .filter((m) => m && (m.role === 'user' || m.role === 'model'))
@@ -14,7 +18,7 @@ function toContents(list) {
 export function planRedo(messages) {
   let modelIndex = -1;
   for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (messages[i].role === 'model') { modelIndex = i; break; }
+    if (messages[i] && messages[i].role === 'model') { modelIndex = i; break; }
   }
   if (modelIndex < 0) return null;
   return { modelIndex, contents: toContents(messages.slice(0, modelIndex)) };
@@ -22,21 +26,21 @@ export function planRedo(messages) {
 
 // EDIT: sunting pesan user pada editIdx → regenerasi ke belakang.
 // contents = sampai & termasuk user terakhir di seluruh array (bukan hanya editIdx),
-// sehingga mengedit Q1 vs Q2 tetap menyimpan [Q1, A1, Q2] sebagai konteks.
-// firstModelIndex = balasan model pertama setelah titik sunting (dimulai regenerasi).
+// sehingga mengedit Q1 vs Q2 tetap menyimpan konteks yang sama; yang berubah hanya
+// firstModelIndex (dimulai regenerasi dari balasan model pertama setelah titik sunting).
 export function planEdit(messages, editIdx) {
   // Cari user terakhir di seluruh array untuk batas contents.
   let lastUserIndex = -1;
   for (let i = 0; i < messages.length; i += 1) {
-    if (messages[i].role === 'user') { lastUserIndex = i; }
+    if (messages[i] && messages[i].role === 'user') { lastUserIndex = i; }
   }
   // Fallback bila tak ada user: pakai editIdx.
   const batas = lastUserIndex >= 0 ? lastUserIndex + 1 : editIdx + 1;
 
-  // Balasan model pertama setelah titik sunting (untuk mulai regenerasi berurutan).
+  // Balasan model pertama setelah titik sunting ( untuk mulai regenerasi berurutan).
   let firstModelIndex = -1;
   for (let i = editIdx + 1; i < messages.length; i += 1) {
-    if (messages[i].role === 'model') { firstModelIndex = i; break; }
+    if (messages[i] && messages[i].role === 'model') { firstModelIndex = i; break; }
   }
 
   return { contents: toContents(messages.slice(0, batas)), firstModelIndex };

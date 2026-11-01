@@ -52,3 +52,33 @@ test('planRedo/edit: abaikan pesan hidden & non-user/model', () => {
   const p = planRedo(mixed);
   assert.deepEqual(p.contents, [{ role: 'user', text: 'Q1' }]);
 });
+
+test('planEdit: fallback editIdx+1 bila tak ada pesan user', () => {
+  // Tanpa user: contents = slice(0, editIdx+1), firstModelIndex setelahnya.
+  const noUser = [{ role: 'model', text: 'A0' }, { role: 'model', text: 'A1' }];
+  const p = planEdit(noUser, 0);
+  assert.deepEqual(p.contents, [{ role: 'model', text: 'A0' }]);
+  assert.equal(p.firstModelIndex, 1);
+});
+
+test('planEdit: firstModelIndex -1 bila tak ada model setelah titik sunting', () => {
+  // Sunting Q2 (idx2) di [Q1, A1, Q2] → tak ada balasan afterward.
+  const p = planEdit(
+    [{ role: 'user', text: 'Q1' }, { role: 'model', text: 'A1' }, { role: 'user', text: 'Q2' }],
+    2,
+  );
+  assert.deepEqual(p.contents, [
+    { role: 'user', text: 'Q1' },
+    { role: 'model', text: 'A1' },
+    { role: 'user', text: 'Q2' },
+  ]);
+  assert.equal(p.firstModelIndex, -1);
+});
+
+test('planRedo/edit: tahan entry non-objek (null) tanpa lempar error', () => {
+  const messy = [null, { role: 'user', text: 'Q1' }, { role: 'model', text: 'A1' }];
+  assert.doesNotThrow(() => planRedo(messy));
+  const p = planEdit(messy, 1); // sunting user di idx1
+  assert.deepEqual(p.contents, [{ role: 'user', text: 'Q1' }]);
+  assert.equal(p.firstModelIndex, 2);
+});
