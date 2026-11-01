@@ -32,15 +32,33 @@ export function deriveTitle(messages) {
   return t.length > 48 ? `${t.slice(0, 48)}…` : t;
 }
 
+// Satukan bentuk pesan (normalize): jamin field metadata token & biaya tetap
+// valid, dan buang pesan rusak (tanpa text string). Kembalikan null untuk yang rusak.
+export function normalizeMessage(m) {
+  if (!m || typeof m.text !== 'string') return null;
+  return {
+    role: m.role === 'model' ? 'model' : m.role === 'error' ? 'error' : 'user',
+    text: m.text,
+    hidden: m.hidden === true ? true : undefined,
+    label: typeof m.label === 'string' ? m.label : undefined,
+    kind: m.kind || undefined,
+    model: typeof m.model === 'string' ? m.model : undefined,
+    tokens: m.tokens && typeof m.tokens === 'object' ? m.tokens : undefined,
+    cost: typeof m.cost === 'number' ? m.cost : undefined,
+    sources: Array.isArray(m.sources) ? m.sources : undefined,
+  };
+}
+
 // Segarkan satu objek sesi dari state hidup (murni: objek baru).
 export function syncSession(session, { messages, startedAt, files, activeMs }, now = Date.now()) {
+  const normalized = (messages || []).map(normalizeMessage).filter(Boolean);
   return {
     ...session,
-    messages: [...messages],
+    messages: normalized,
     files: files ? [...files] : session.files || [],
     startedAt,
     activeMs: activeMs ?? session.activeMs ?? 0,
-    title: deriveTitle(messages) || session.title || '',
+    title: deriveTitle(normalized) || session.title || '',
     updatedAt: now,
   };
 }
