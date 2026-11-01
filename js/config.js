@@ -46,6 +46,7 @@ export const LEVELS = {
 // tanpa menyentuh data aplikasi lain.
 export const STORAGE_KEYS = {
   prefix: 'tanyabukan.',
+  provider: 'tanyabukan.provider',
   apiKey: 'tanyabukan.apiKey',
   materiFiles: 'tanyabukan.materiFiles', // legacy v1 (file global) — dimigrasi ke session.files
   onboardingDone: 'tanyabukan.onboardingDone',

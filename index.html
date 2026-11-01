@@ -203,6 +203,25 @@
         </div>
       </section>
 
+      <!-- PROVIDER -->
+      <section class="panel" aria-labelledby="panel-provider-title">
+        <div class="panel__header">
+          <h2 class="panel__title" id="panel-provider-title">Provider</h2>
+        </div>
+        <div class="field">
+          <label class="field__label" for="providerSelect">Model Provider</label>
+          <select id="providerSelect" class="select"></select>
+          <p class="field__hint">Daftar model menyesuaikan endpoint &amp; kunci yang dipakai. Gemini tetap default.</p>
+        </div>
+        <div class="field">
+          <label class="field__label" for="customBaseUrl">Endpoint Custom (OpenAI-compatible)</label>
+          <input id="customBaseUrl" class="input" type="text" placeholder="https://api.groq.com/openai/v1" autocomplete="off" spellcheck="false" />
+          <input id="customAuthHeader" class="input" type="text" placeholder="Header auth (opsional, mis. Bearer)" autocomplete="off" spellcheck="false" style="margin-top:var(--space-2)" />
+          <button id="addCustomProvider" class="btn btn--ghost btn--sm" type="button" style="margin-top:var(--space-2)">Tambah endpoint</button>
+          <p class="field__hint">Grounding &amp; penalaran hanya aktif di provider yang mendukung (default Gemini).</p>
+        </div>
+      </section>
+
       <div class="panel__divider" role="separator"></div>
 
       <!-- MATERI -->

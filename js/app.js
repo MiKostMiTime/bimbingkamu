@@ -4,7 +4,8 @@
 // =========================================================
 import { API, STORAGE_KEYS, getLevelLabel } from './config.js';
 import { storage } from './storage.js';
-import { callGemini, fetchAvailableModels } from './api.js';
+import { callGemini } from './api.js';
+import { resolveProviders, listModels } from './providers.js';
 import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
 import { extractPdfText } from './pdf.js';
 import { extractDocxText } from './docx.js';
@@ -71,6 +72,10 @@ const dom = {
   levelValue: $('levelValue'),
   levelDesc: $('levelDesc'),
   model: $('modelSelect'),
+  providerSelect: $('providerSelect'),
+  customBaseUrl: $('customBaseUrl'),
+  customAuthHeader: $('customAuthHeader'),
+  addCustomProvider: $('addCustomProvider'),
   webSearchToggle: $('webSearchToggle'),
   timer: $('timerValue'),
   turns: $('turnValue'),
@@ -83,7 +88,7 @@ const dom = {
 };
 
 // ===== STATE =====
-const DEFAULT_SETTINGS = { mode: 'konsep', level: 3, model: API.defaultModel, webSearch: true };
+const DEFAULT_SETTINGS = { mode: 'konsep', level: 3, model: API.defaultModel, webSearch: true, provider: 'gemini', providers: [] };
 
 const state = {
   apiKey: storage.get(STORAGE_KEYS.apiKey, ''),
@@ -112,43 +117,73 @@ function logApiError(err) {
 }
 
 // ===== DAFTAR MODEL (REFRESH OTOMATIS) =====
-// Setelah kunci dimasukkan, tanyakan model apa yang bisa dipakai kunci
-// itu, lalu segarkan selector. Menjamin model yang sudah dinonaktifkan
-// Google (mis. 2.0/1.5-flash → 404) tidak lagi ditawarkan.
-// Gagal diam — daftar statis di index.html tetap berlaku.
+// Setelah kunci dimasukkan atau provider dipilih, tanyakan model apa yang
+// bisa dipakai endpoint+kunci itu, lalu segarkan selector model. Menjamin
+// model yang sudah dinonaktifkan tidak lagi ditawarkan. Gagal diam — daftar
+// statis di index.html tetap berlaku. Mengikuti provider yang TERPILIH, bukan
+// hanya Gemini (F2: dropdown harus mengikuti provider terpilih).
 let modelRefreshTimer = null;
 
 function scheduleModelRefresh() {
   if (modelRefreshTimer) clearTimeout(modelRefreshTimer);
   modelRefreshTimer = setTimeout(() => {
     modelRefreshTimer = null;
-    refreshModelList();
+    refreshProviderModelList();
   }, 800);
 }
 
-async function refreshModelList() {
+// Registry provider = default (Gemini) + custom dari settings.providers.
+function currentProviders() { return resolveProviders(state.settings.providers || []); }
+
+// Isi dropdown model (#modelSelect) berdasarkan provider yang TERPILIH.
+// Dipanggil saat load, ganti provider, dan ganti kunci → F2: dropdown selalu
+// mengikuti provider terpilih, bukan hanya Gemini.
+async function refreshProviderModelList() {
   if (!state.apiKey) return;
+  const providers = currentProviders();
+  const providerId = state.settings.provider || 'gemini';
+  const provider = providers[providerId];
+  if (!provider) return;
   try {
-    const available = await fetchAvailableModels(state.apiKey);
-    if (!available.length) return; // simpan daftar statis
-    // Id hanya huruf/angka/titik/tirai (disaring regex di api.js) → aman
+    const ids = await listModels(state.apiKey, provider);
+    if (!ids.length) return; // gagal → biarkan daftar statis
+    // Id hanya huruf/angka/titik/tirai (disaring regex di providers.js) → aman
     // untuk disisipkan ke <option>.
-    const labelFor = (id) => {
-      const known = API.models.find((m) => m.id === id);
-      return known ? known.label : id;
-    };
-    const current = state.settings.model;
-    dom.model.innerHTML = available
-      .map((id) => `<option value="${id}">${labelFor(id)}</option>`)
-      .join('');
-    dom.model.value = available.includes(current) ? current : available[0];
-    if (state.settings.model !== dom.model.value) {
-      state.settings.model = dom.model.value;
-      persistSettings();
-    }
+    dom.model.innerHTML = ids.map((id) => `<option value="${id}">${id}</option>`).join('');
+    dom.model.value = ids.includes(state.settings.model) ? state.settings.model : ids[0];
+    state.settings.model = dom.model.value;
+    persistSettings();
   } catch (err) {
-    console.warn('[TanyaBukan] gagal memuat daftar model:', err && err.message);
+    console.warn('[TanyaBukan] gagal memuang daftar model provider:', err && err.message);
   }
+}
+
+// Isi selector provider (#providerSelect) dari registry + tandai yang terpilih.
+function renderProviderOptions() {
+  const providers = currentProviders();
+  dom.providerSelect.innerHTML = Object.values(providers)
+    .map((p) => `<option value="${p.id}" ${p.id === state.settings.provider ? 'selected' : ''}>${p.name}</option>`)
+    .join('');
+}
+
+// Tambahkan endpoint custom OpenAI-compatible ke registry + pilih otomatis.
+function addCustomProvider() {
+  const baseUrl = dom.customBaseUrl.value.trim();
+  if (!baseUrl) { showToast('Masukkan URL endpoint dulu, ya.', 'info'); return; }
+  const id = 'custom-' + Math.random().toString(36).slice(2, 7);
+  const provider = {
+    id, name: baseUrl, baseUrl,
+    authHeader: dom.customAuthHeader.value.trim() || 'Authorization',
+    supportsGrounding: false, supportsThinking: false, custom: true,
+  };
+  state.settings.providers = [...(state.settings.providers || []), provider];
+  state.settings.provider = id;
+  persistSettings();
+  renderProviderOptions();
+  refreshProviderModelList();
+  dom.customBaseUrl.value = '';
+  dom.customAuthHeader.value = '';
+  showToast(`Endpoint "${baseUrl}" ditambahkan.`, 'success');
 }
 
 // ===== BANTUAN SESI =====
@@ -794,6 +829,7 @@ function autosizeInput() {
 // ===== HIDRASI UI DARI STATE =====
 function hydrateSettings() {
   buildModelOptions();
+  renderProviderOptions();
   dom.apiKey.value = state.apiKey;
   updateMateriCount();
   renderMateriFiles();
@@ -1051,6 +1087,16 @@ function bindEvents() {
     scheduleModelRefresh();
     refreshEmptyState();
   });
+
+  // PROVIDER: ganti provider → segarkan dropdown model + render ulang opsi.
+  dom.providerSelect.addEventListener('change', () => {
+    state.settings.provider = dom.providerSelect.value;
+    persistSettings();
+    renderProviderOptions();
+    refreshProviderModelList();
+  });
+  dom.addCustomProvider.addEventListener('click', addCustomProvider);
+
   dom.apiKeyToggle.addEventListener('click', () => {
     const show = dom.apiKey.type === 'password';
     dom.apiKey.type = show ? 'text' : 'password';
@@ -1264,8 +1310,8 @@ function init() {
   startActiveTimer();
   bindEvents();
 
-  // Kunci tersimpan dari sesi lalu → segarkan daftar model sekali.
-  if (state.apiKey) refreshModelList();
+  // Kunci tersimpan dari sesi lalu → segarkan daftar model sesuai provider terpilih.
+  if (state.apiKey) refreshProviderModelList();
   hydrateSidebar();
 
   if (!storage.get(STORAGE_KEYS.onboardingDone, false)) {
