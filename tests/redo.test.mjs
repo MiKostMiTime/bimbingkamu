@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { planRedo, planEdit } from '../js/redo.js';
+import { planRedo, planEdit, applyRedo } from '../js/redo.js';
 
 const msgs = [
   { role: 'user', text: 'Q1' },
@@ -81,4 +81,16 @@ test('planRedo/edit: tahan entry non-objek (null) tanpa lempar error', () => {
   const p = planEdit(messy, 1); // sunting user di idx1
   assert.deepEqual(p.contents, [{ role: 'user', text: 'Q1' }]);
   assert.equal(p.firstModelIndex, 2);
+});
+
+test('applyRedo: membungkus plan menjadi instruksi regenerasi', () => {
+  const msgs = [{ role: 'user', text: 'Q1' }, { role: 'model', text: 'A1' }];
+  const plan = applyRedo(msgs, planRedo(msgs));
+  assert.equal(plan.modelIndex, 1);
+  assert.deepEqual(plan.contents, [{ role: 'user', text: 'Q1' }]);
+});
+
+test('applyRedo: null bila modelIndex di luar rentang', () => {
+  assert.equal(applyRedo([{ role: 'model', text: 'A' }], { modelIndex: 5, contents: [] }), null);
+  assert.equal(applyRedo([], {}), null);
 });

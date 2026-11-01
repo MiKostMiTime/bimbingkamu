@@ -5,6 +5,7 @@
 import { API, STORAGE_KEYS, getLevelLabel } from './config.js';
 import { storage } from './storage.js';
 import { callGemini, fetchAvailableModels } from './api.js';
+import { planRedo, applyRedo } from './redo.js';
 import { extractPdfText } from './pdf.js';
 import { extractDocxText } from './docx.js';
 import { buildSystemPrompt, buildOpeningPrompt, buildHintPrompt } from './prompt.js';
@@ -28,6 +29,7 @@ import {
   scrollToEnd,
   renderRich,
   renderSources,
+  addRedoButton,
   setMateriProvider,
 } from './chat.js';
 import {
@@ -371,9 +373,10 @@ function renderMessagesFromState() {
     if (m.role === 'user') {
       addUserMessage(dom.messages, m.label || m.text);
     } else if (m.role === 'model') {
-      const { msg, content } = addModelMessage(dom.messages);
+      const { msg, content, col } = addModelMessage(dom.messages);
       renderRich(content, m.text);
       renderSources(msg, m.sources, { onSave: () => saveWebMateri(m.sources) });
+      addRedoButton(col, regenerateLast);
     } else {
       addNotice(dom.messages, m.text, m.role);
     }
@@ -480,8 +483,9 @@ async function generateGreeting() {
     });
     removeTyping(typing);
     state.messages.push(opening, { role: 'model', text: replyText });
-    const { msg, content } = addModelMessage(dom.messages);
+    const { msg, content, col } = addModelMessage(dom.messages);
     streamReply(content, replyText, msg); // onDone yang melepas busy
+    addRedoButton(col, regenerateLast);
   } catch (err) {
     removeTyping(typing);
     state.busy = false;
@@ -563,9 +567,10 @@ async function sendUserMessage(rawText, opts = {}) {
     removeTyping(typing);
     state.messages.push({ role: 'model', text: reply, sources });
     answered = true;
-    const { msg, content } = addModelMessage(dom.messages);
+    const { msg, content, col } = addModelMessage(dom.messages);
     streamReply(content, reply, msg); // onDone yang melepas busy
     renderSources(msg, sources, { onSave: () => saveWebMateri(sources) });
+    addRedoButton(col, regenerateLast);
   } catch (err) {
     removeTyping(typing);
     state.busy = false;
@@ -611,6 +616,67 @@ function streamReply(content, text, msg) {
       scrollToEnd(dom.chatScroll);
     },
   });
+}
+
+// ===== REGENERASI BALASAN MODEL (REDO) =====
+// Rerender bubble model dari state.messages[idx]: hapus bubble terakhir, lalu
+// rebuild dari state. Dipakai tombol "Regenerasi" di setiap bubble tutor.
+function rerenderModelMessage(idx) {
+  const bubbles = dom.messages.querySelectorAll('.msg--model');
+  if (bubbles.length) bubbles[bubbles.length - 1].remove();
+  const msg = state.messages[idx];
+  if (!msg) return;
+  const built = addModelMessage(dom.messages);
+  renderRich(built.content, msg.text || '');
+  renderSources(built.msg, msg.sources || [], { onSave: () => saveWebMateri(msg.sources || []) });
+  addRedoButton(built.col, regenerateLast);
+}
+
+// Regenerasi balasan model terakhir via planRedo → callGemini → rebuild bubble.
+async function regenerateLast() {
+  if (state.busy) { showToast('Tunggu balasan tutor selesai dulu, ya.', 'info'); return; }
+  if (!state.apiKey) { showToast('Masukkan kunci API dulu, ya.', 'error'); openSettingsAndFocus(dom.apiKey); return; }
+  if (!buildMateri()) { showToast('Lampirkan file materi dulu.', 'error'); openSettingsAndFocus(dom.materiDrop); return; }
+
+  const plan = applyRedo(state.messages, planRedo(state.messages));
+  if (!plan) { showToast('Belum ada balasan untuk diregenerasi.', 'info'); return; }
+
+  state.busy = true;
+  updateComposer();
+  const typing = showTyping(dom.messages);
+  scrollToEnd(dom.chatScroll, true);
+
+  try {
+    const { text: reply, sources } = await callGemini({
+      apiKey: state.apiKey,
+      model: state.settings.model,
+      systemPrompt: buildSystemPrompt({
+        materi: buildMateri(),
+        mode: state.settings.mode,
+        level: state.settings.level,
+        webSearch: state.settings.webSearch,
+      }),
+      contents: plan.contents,
+      thinkingLevel: thinkingLevelFor(),
+      webSearch: state.settings.webSearch,
+    });
+    removeTyping(typing);
+    const prev = state.messages[plan.modelIndex];
+    // cost = undefined sementara (Task 8); metadata lain ikut.
+    state.messages[plan.modelIndex] = { ...prev, text: reply, sources };
+    rerenderModelMessage(plan.modelIndex);
+    state.busy = false; // <-- PENTING: reset di jalur sukses agar tidak mengunci composer
+  } catch (err) {
+    removeTyping(typing);
+    state.busy = false;
+    const text = errorDisplayText(err);
+    addNotice(dom.messages, text, 'error');
+    showToast(text, 'error');
+    logApiError(err);
+  } finally {
+    updateComposer();
+    saveActiveSession();
+  }
 }
 
 // ===== DRAWER PENGATURAN (kanan) =====

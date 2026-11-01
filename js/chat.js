@@ -190,7 +190,9 @@ export function addUserMessage(root, text) {
 }
 
 // ===== PESAN MODEL =====
-// Membuat bubble kosong siap diisi; kembalikan { msg, content }.
+// Membuat bubble kosong siap diisi; kembalikan { msg, content, col }.
+// `col` = .msg__col tempat menempati tombol aksi (mis. regenerasi). Pemanggil
+// lama yang hanya butuh { msg, content } tetap berjalan (destruksi sebagian).
 export function addModelMessage(root) {
   removeEmptyState(root);
   const msg = document.createElement('div');
@@ -199,7 +201,7 @@ export function addModelMessage(root) {
   const { col, content } = makeColumn('Tutor');
   msg.appendChild(col);
   root.appendChild(msg);
-  return { msg, content };
+  return { msg, content, col };
 }
 
 // ===== PESAN NOTIFIKASI (sistem/error) =====
@@ -334,6 +336,22 @@ export function renderSources(msg, sources, { onSave } = {}) {
 
   col.appendChild(box);
   return box;
+}
+
+// ===== TOMBOL REGENERASI (REDO) =====
+// Tombol aksi di footer bubble model untuk meregenerasi balasan terakhir.
+const REDO_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>';
+
+export function addRedoButton(col, onRedo) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'msg__action btn btn--ghost btn--sm';
+  btn.setAttribute('aria-label', 'Regenerasi balasan tutor');
+  btn.innerHTML = REDO_ICON;
+  if (typeof onRedo === 'function') btn.addEventListener('click', onRedo);
+  col.insertBefore(btn, col.firstChild);
+  return btn;
 }
 
 // ===== KOSONGKAN & EMPTY STATE =====

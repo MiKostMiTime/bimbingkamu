@@ -45,3 +45,14 @@ export function planEdit(messages, editIdx) {
 
   return { contents: toContents(messages.slice(0, batas)), firstModelIndex };
 }
+
+// Gabungkan hasil planRedo menjadi instruksi regenerasi untuk caller (app.js).
+// Kembalikan { contents, modelIndex }, atau null bila plan tak ada / modelIndex
+// tak terdefinisi / negatif / di luar rentang pesan. Guard modelIndex == null
+// ditambahkan agar rencana kosong (mis. {}) juga aman → null, sesuai uji.
+export function applyRedo(messages, plan) {
+  if (!plan || !Array.isArray(messages)) return null;
+  const { modelIndex } = plan;
+  if (modelIndex == null || modelIndex < 0 || modelIndex >= messages.length) return null;
+  return { contents: plan.contents, modelIndex };
+}
