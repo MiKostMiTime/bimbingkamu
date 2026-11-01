@@ -5,6 +5,7 @@
 // =========================================================
 
 import { extractMath, loadKatex } from './math.js';
+import { formatCost } from './pricing.js';
 
 // ===== UTIL TEKS =====
 function escapeHtml(str) {
@@ -422,6 +423,24 @@ export function addRedoButton(col, onRedo) {
   if (typeof onRedo === 'function') btn.addEventListener('click', onRedo);
   col.insertBefore(btn, col.firstChild);
   return btn;
+}
+
+// ===== FOOTER TOKEN + BIAYA =====
+// Tempel ringkasan token & biaya di bawah bubble model (append ke `col`, jadi
+// muncul di BAWAH sumber + tombol regenerasi). Hanya tampil bila ada data:
+// "N token · ~$X.XX" (token) dan/atau "~$X.XX" (biaya). Kembalikan node-nya.
+export function addCostFooter(col, tokens, cost) {
+  const foot = document.createElement('div');
+  foot.className = 'msg__footer';
+  const parts = [];
+  if (tokens && typeof tokens.completion === 'number') {
+    parts.push(`${tokens.completion.toLocaleString('id-ID')} token`);
+  }
+  if (typeof cost === 'number') parts.push(`~${formatCost(cost)}`);
+  if (!parts.length) return null;
+  foot.textContent = parts.join(' · ');
+  col.appendChild(foot);
+  return foot;
 }
 
 // ===== KOSONGKAN & EMPTY STATE =====

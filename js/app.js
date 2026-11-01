@@ -3,6 +3,7 @@
 // Entry point: inisialisasi modul, state sesi, event binding.
 // =========================================================
 import { API, STORAGE_KEYS, getLevelLabel } from './config.js';
+import { estimateCost, formatCost } from './pricing.js';
 import { storage } from './storage.js';
 import { callGemini } from './api.js';
 import { resolveProviders, listModels } from './providers.js';
@@ -32,6 +33,7 @@ import {
   renderRich,
   renderSources,
   addRedoButton,
+  addCostFooter,
   setMateriProvider,
 } from './chat.js';
 import {
@@ -79,6 +81,7 @@ const dom = {
   webSearchToggle: $('webSearchToggle'),
   timer: $('timerValue'),
   turns: $('turnValue'),
+  costTotal: $('costTotal'),
   exportBtn: $('exportBtn'),
   chatScroll: $('chatScroll'),
   messages: $('chatMessages'),
@@ -413,6 +416,7 @@ function renderMessagesFromState() {
       renderRich(content, m.text);
       renderSources(msg, m.sources, { onSave: () => saveWebMateri(m.sources) });
       addRedoButton(col, regenerateLast);
+      addCostFooter(col, m.tokens, m.cost ?? computeCost(m));
     } else {
       addNotice(dom.messages, m.text, m.role);
     }
@@ -518,10 +522,12 @@ async function generateGreeting() {
       webSearch: false,
     });
     removeTyping(typing);
-    state.messages.push(opening, { role: 'model', text: replyText });
+    const modelMsg = { role: 'model', text: replyText };
+    state.messages.push(opening, modelMsg);
     const { msg, content, col } = addModelMessage(dom.messages);
     streamReply(content, replyText, msg); // onDone yang melepas busy
     addRedoButton(col, regenerateLast);
+    addCostFooter(col, modelMsg.tokens, modelMsg.cost ?? computeCost(modelMsg));
   } catch (err) {
     removeTyping(typing);
     state.busy = false;
@@ -610,12 +616,14 @@ async function sendUserMessage(rawText, opts = {}) {
       webSearch: state.settings.webSearch,
     });
     removeTyping(typing);
-    state.messages.push({ role: 'model', text: reply, sources });
+    const modelMsg = { role: 'model', text: reply, sources };
+    state.messages.push(modelMsg);
     answered = true;
     const { msg, content, col } = addModelMessage(dom.messages);
     streamReply(content, reply, msg); // onDone yang melepas busy
     renderSources(msg, sources, { onSave: () => saveWebMateri(sources) });
     addRedoButton(col, regenerateLast);
+    addCostFooter(col, modelMsg.tokens, modelMsg.cost ?? computeCost(modelMsg));
   } catch (err) {
     removeTyping(typing);
     state.busy = false;
@@ -675,6 +683,7 @@ function rerenderModelMessage(idx) {
   renderRich(built.content, msg.text || '');
   renderSources(built.msg, msg.sources || [], { onSave: () => saveWebMateri(msg.sources || []) });
   addRedoButton(built.col, regenerateLast);
+  addCostFooter(built.col, msg.tokens, msg.cost ?? computeCost(msg));
 }
 
 // Regenerasi balasan model terakhir via planRedo → callGemini → rebuild bubble.
@@ -738,6 +747,7 @@ function rerenderModelMessagesFrom(startIdx) {
       renderRich(built.content, m.text || '');
       renderSources(built.msg, m.sources || [], { onSave: () => saveWebMateri(m.sources || []) });
       addRedoButton(built.col, regenerateLast);
+      addCostFooter(built.col, m.tokens, m.cost ?? computeCost(m));
     } else addNotice(dom.messages, m.text, m.role);
   }
 }
@@ -931,10 +941,30 @@ function updateLevelLabel() {
   dom.levelDesc.textContent = getLevelLabel(level);
 }
 
+// ===== HITUNG BIAYA =====
+// Biaya estimasi satu pesan model dari token keluarnya (completion) pada model
+// aktif. estimateCost mengembalikan null bila harga model belum diketahui.
+function computeCost(msg) {
+  return estimateCost(state.settings.model, msg.tokens || {});
+}
+
+// Ringkasan total sesi: seluruh pesan model → jumlah token completion + total biaya.
+function sessionStats() {
+  const modelMsgs = state.messages.filter((m) => m.role === 'model');
+  const totalCompletion = modelMsgs.reduce((n, m) => n + (m.tokens?.completion || 0), 0);
+  const totalCost = modelMsgs.reduce((n, m) => {
+    const c = m.cost ?? computeCost(m);
+    return n + (typeof c === 'number' ? c : 0);
+  }, 0);
+  return { completion: totalCompletion, cost: totalCost };
+}
+
 // ===== STATISTIK & STATUS UI =====
 function updateStats() {
   setDialogCount(dom.turns, turnCount());
   dom.exportBtn.disabled = !state.messages.length;
+  const stats = sessionStats();
+  dom.costTotal.textContent = formatCost(stats.cost);
 }
 
 function updateComposer() {
