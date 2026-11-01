@@ -4,7 +4,7 @@
 // menyesuaikan endpoint. Murni modul (tanpa DOM); error dari
 // fetch dipeta ke mapApiError agar ramah pemakai.
 // =========================================================
-import { mapApiError } from './api.js';
+import { mapApiError, extractSources } from './api.js';
 
 // Provider default: Gemini lewat adapter OpenAI (/openai/models,
 // /openai/chat/completions) dengan header x-goog-api-key.
@@ -67,4 +67,78 @@ export async function listModels(apiKey, provider = PROVIDERS.gemini) {
     ids.push(m.id);
   }
   return ids;
+}
+
+// ===== CHAT COMPLETION (PATH OPENAI) =====
+// Panggil endpoint OpenAI-shaped provider (default: Gemini adapter).
+// POST ${baseUrl}${chatPath} body { model, messages, max_tokens, tools?, generationConfig? }.
+// Parameter: { provider, apiKey, model, systemPrompt, contents, maxTokens, thinkingLevel, grounding }
+// `contents` = array { role: 'user'|'model', text } (riwayat penuh).
+// Mengembalikan Promise<{ text, tokens:{prompt,completion,total}, sources }>.
+export async function chatCompletion({
+  provider = PROVIDERS.gemini, apiKey, model, systemPrompt, contents,
+  maxTokens = 8192, thinkingLevel, grounding,
+}) {
+  const messages = [];
+  if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+  for (const m of contents || []) messages.push({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text });
+
+  const body = { model, messages, max_tokens: maxTokens };
+  if (provider.supportsThinking && thinkingLevel) {
+    body.generationConfig = { thinkingLevel }; // Gemini adapter; provider lain abaikan
+  }
+
+  let res;
+  try {
+    res = await buildChatRequest(provider, apiKey, body, grounding);
+  } catch (err) {
+    throw err;
+  }
+
+  if (!res.ok) {
+    let apiMessage = '';
+    try { apiMessage = (await res.json()).error?.message || ''; } catch {}
+    // Graceful degradation: tools → coba ulang tanpa tools bila request-ditolak (400/422).
+    const bodyStr = JSON.stringify(body);   // body sudah punya tools (dari buildChatRequest)
+    const withoutTools = { ...JSON.parse(bodyStr) };
+    delete withoutTools.tools;
+    if ((res.status === 400 || res.status === 422) && body.tools && !withoutTools.tools) {
+      try {
+        res = await fetch(`${provider.baseUrl}${provider.chatPath}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(provider, apiKey) },
+          body: JSON.stringify(withoutTools),
+        });
+      } catch { throw { ...mapApiError(0) }; }
+    }
+    if (!res.ok) throw { ...mapApiError(res.status, apiMessage) };
+  }
+
+  const data = await res.json();
+  const choice = data.choices && data.choices[0];
+  const text = (choice && choice.message && choice.message.content) || '';
+  const usage = data.usage || {};
+  const tokens = {
+    prompt: usage.prompt_tokens ?? undefined,
+    completion: usage.completion_tokens ?? undefined,
+    total: usage.total_tokens ?? undefined,
+  };
+  let sources = [];
+  if (data.candidates) sources = extractSources(data.candidates[0]); // Gemini: sumber dari groundingMetadata
+  return { text: text.trim(), tokens, sources };
+}
+
+// Bangun & kirim POST chat; tambahkan tools grounding bila diminta + didukung.
+async function buildChatRequest(provider, apiKey, body, grounding) {
+  if (grounding && provider.supportsGrounding) body.tools = [{ type: 'function', function: { name: 'google_search', description: 'web grounding' } }];
+  return fetch(`${provider.baseUrl}${provider.chatPath}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeader(provider, apiKey) },
+    body: JSON.stringify(body),
+  });
+}
+
+// Convenience untuk app.js: providerChat('gemini', params) → chatCompletion.
+export async function providerChat(providerName, params = {}) {
+  const providers = resolveProviders(params.customProviders || []);
+  return chatCompletion({ provider: providers[providerName] || PROVIDERS.gemini, ...params });
 }
