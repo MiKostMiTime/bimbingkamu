@@ -9,7 +9,7 @@ import { resolveProviders, listModels, providerChat, probeEndpoint } from './pro
 import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
 import { extractPdfText } from './pdf.js';
 import { extractDocxText } from './docx.js';
-import { buildSystemPrompt, buildOpeningPrompt, buildHintPrompt } from './prompt.js';
+import { buildSystemPrompt, buildOpeningPrompt } from './prompt.js';
 import {
   createSession,
   syncSession,
@@ -88,7 +88,6 @@ const dom = {
   messages: $('chatMessages'),
   input: $('chatInput'),
   send: $('sendBtn'),
-  hint: $('hintBtn'),
 };
 
 // ===== STATE =====
@@ -269,18 +268,6 @@ function cleanMessages(list) {
 // thinking_level: mode Penjelasan butuh penalaran lebih; lainnya cukup rendah.
 function thinkingLevelFor() {
   return state.settings.mode === 'penjelasan' ? 'medium' : 'low';
-}
-
-// Petunjuk berturut-turut sejak pertanyaan terakhir siswa (untuk petunjuk bertingkat).
-function consecutiveHints() {
-  let n = 0;
-  for (let i = state.messages.length - 1; i >= 0; i -= 1) {
-    const m = state.messages[i];
-    if (m.role !== 'user' || m.hidden) continue;
-    if (m.kind === 'hint') n += 1;
-    else break;
-  }
-  return n;
 }
 
 // Empty state dengan checklist persiapan (kunci API + materi).
@@ -1015,7 +1002,6 @@ function updateStats() {
 
 function updateComposer() {
   dom.send.disabled = state.busy || !dom.input.value.trim();
-  dom.hint.disabled = state.busy || !state.messages.length;
 }
 
 // ===== RESTORE (awal aplikasi) =====
@@ -1279,10 +1265,6 @@ function bindEvents() {
     }
   });
   dom.send.addEventListener('click', () => sendUserMessage());
-  // Petunjuk bertingkat: makin sering berturut-turut, makin spesifik (tanpa jawaban akhir).
-  dom.hint.addEventListener('click', () =>
-    sendUserMessage(buildHintPrompt(consecutiveHints() + 1), { label: 'Minta petunjuk', kind: 'hint' })
-  );
   dom.exportBtn.addEventListener('click', exportCurrent);
 
   // Riwayat: toggle sidebar (HP = drawer, layar lebar = ratakan)

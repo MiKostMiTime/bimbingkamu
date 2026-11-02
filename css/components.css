@@ -446,23 +446,6 @@
   min-width: 0;
 }
 
-/* Selector endpoint + model di APP-HEADER (gaya chatbot: pilih model di bar atas) */
-.app-header__model {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  flex: 1 1 auto;
-  margin-left: var(--space-4);
-}
-
-.app-header__model .select--sm {
-  max-width: 200px;
-  font-size: var(--text-caption);
-  padding: 5px 24px 5px 10px;
-  text-overflow: ellipsis;
-}
-
 .conn-status {
   font-size: var(--text-caption);
   color: var(--color-text-secondary);
@@ -1242,20 +1225,10 @@ input, textarea, select,
 .segmented { grid-auto-flow: row; grid-template-columns: repeat(2, 1fr); }
 .segmented__btn { height: auto; min-height: 34px; padding: 6px var(--space-2); }
 
-/* Composer di layar kecil: tombol petunjuk di baris sendiri */
-@media (max-width: 640px) {
-  .composer__input-wrap { flex-wrap: wrap; }
-  #hintBtn { order: -1; }
-  .composer textarea { flex: 1 1 100%; }
-}
-
 /* ===== MOBILE-FIRST REFINEMENT (≤640px) ===== */
 @media (max-width: 640px) {
-  /* Header: brand meringkas, selector model tetap bisa diakses */
+  /* Header: brand meringkas; endpoint/model ada di drawer Pengaturan */
   .app-header { gap: var(--space-2); padding: var(--space-2) var(--space-3); }
-  .app-header__model { margin-left: 0; }
-  .app-header__model .select--sm { max-width: 118px; padding: 4px 20px 4px 8px; }
-  .conn-status { display: none; } /* status cukup terlihat dari indikator gagal/berhasil saat connect */
 
   /* Statistik durasi/giliran/biaya disembunyikan — area chat lebih lega */
   .chat-header__stats { display: none; }
@@ -1272,23 +1245,14 @@ input, textarea, select,
     justify-content: center;
   }
   #sendBtn svg { width: 18px; height: 18px; }
-  #hintBtn { padding: 6px 10px; }
-  #hintBtn svg { width: 16px; height: 16px; }
-
   /* Composer: input melebar, tombol kirim menempel di kanan */
   .composer { padding: var(--space-2) var(--space-3); }
   .composer__inner { gap: var(--space-2); }
   .composer textarea { font-size: 16px; } /* cegah zoom otomatis iOS */
 }
 
-/* Layar sempit ekstrem (≤380px): pilih model saja, endpoint di drawer */
-@media (max-width: 380px) {
-  #providerSelect { display: none; }
-}
-
-/* Tablet kecil (641–820px): pilih model lebih lega, stat biaya disembunyikan */
+/* Tablet kecil (641–820px): brand lebih ringkas */
 @media (min-width: 641px) and (max-width: 820px) {
-  .app-header__model .select--sm { max-width: 150px; }
   .app-header__tagline { display: none; }
 }
 

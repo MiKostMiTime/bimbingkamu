@@ -48,13 +48,6 @@
           <span class="app-header__tagline">Membimbing, bukan menjawab</span>
         </div>
       </div>
-      <div class="app-header__model">
-        <select id="providerSelect" class="select select--sm" aria-label="Endpoint" title="Endpoint"></select>
-        <select id="modelSelect" class="select select--sm" aria-label="Model AI" title="Model AI">
-          <option value="">Pilih model…</option>
-        </select>
-        <span id="headerConnStatus" class="conn-status" title="Status endpoint">●</span>
-      </div>
       <div class="app-header__actions">
         <button
           id="historyToggle"
@@ -138,12 +131,6 @@
         <div class="composer">
           <div class="composer__inner">
             <div class="composer__input-wrap">
-              <button id="hintBtn" class="btn btn--secondary btn--sm" type="button" disabled>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.4 1 2.3h6c0-.9.4-1.8 1-2.3A7 7 0 0 0 12 2Z" />
-                </svg>
-                <span class="btn__label">Beri Saya Petunjuk</span>
-              </button>
               <textarea
                 id="chatInput"
                 rows="1"
@@ -212,14 +199,20 @@
         </div>
       </section>
 
-      <!-- PROVIDER -->
+      <!-- ENDPOINT & MODEL -->
       <section class="panel" aria-labelledby="panel-provider-title">
         <div class="panel__header">
-          <h2 class="panel__title" id="panel-provider-title">Endpoint</h2>
+          <h2 class="panel__title" id="panel-provider-title">Endpoint &amp; Model</h2>
         </div>
         <div class="field">
-          <label class="field__label">Endpoint terdaftar</label>
-          <p class="field__hint">Endpoint &amp; model dipilih di header chat (di atas area percakapan). Tambah endpoint lewat form di bawah — daftar model otomatis diambil dari endpoint (dicoba /models lalu /v1/models).</p>
+          <label class="field__label" for="providerSelect">Endpoint aktif</label>
+          <select id="providerSelect" class="select"></select>
+          <span id="headerConnStatus" class="conn-status" style="display:block;margin-top:4px" title="Status endpoint">&#9679; Belum ada endpoint</span>
+        </div>
+        <div class="field">
+          <label class="field__label" for="modelSelect">Model AI</label>
+          <select id="modelSelect" class="select"></select>
+          <p class="field__hint">Daftar model otomatis diambil dari endpoint terpilih.</p>
         </div>
         <div class="field">
           <label class="field__label" for="customBaseUrl">Tambah endpoint ([OI]-compatible)</label>

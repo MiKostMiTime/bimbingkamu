@@ -232,7 +232,7 @@ export function buildOpeningPrompt() {
   ].join('\n');
 }
 
-// ===== PROMPT PETUNJUK (tombol "Beri Saya Petunjuk") =====
+// ===== PROMPT PETUNJUK =====
 // step = petunjuk berturut-turut ke-n (1, 2, 3, …) sejak pertanyaan terakhir siswa.
 export function buildHintPrompt(step = 1) {
   const tingkat =

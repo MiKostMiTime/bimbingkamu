@@ -472,7 +472,7 @@ export function renderEmptyState(root, { onStart, onOpenSettings, status } = {})
     <div class="empty-state__icon" aria-hidden="true">${EMPTY_ICON}</div>
     <h2 class="empty-state__title">Mulai belajar dengan TanyaBukan</h2>
     <p class="empty-state__text">
-      Siapkan dua hal: sambungkan endpoint AI (header di atas) dan lampirkan file materi. Setelah itu tanya
+      Siapkan dua hal di Pengaturan (gear, kanan atas): hubungkan endpoint & pilih model, lalu lampirkan file materi. Setelah itu tanya
       apa saja — tutor akan menjelaskan materimu, mengecek pemahamanmu, dan
       membimbingmu sampai paham.
     </p>
