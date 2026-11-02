@@ -5,8 +5,8 @@
 import { API, STORAGE_KEYS, getLevelLabel } from './config.js';
 import { estimateCost, formatCost } from './pricing.js';
 import { storage } from './storage.js';
-import { callGemini } from './api.js';
-import { resolveProviders, listModels } from './providers.js';
+// import { callGemini } from './api.js';   // DIPINDAHKAN → providerChat dari providers.js
+import { resolveProviders, listModels, providerChat } from './providers.js';
 import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
 import { extractPdfText } from './pdf.js';
 import { extractDocxText } from './docx.js';
@@ -507,8 +507,8 @@ async function generateGreeting() {
   scrollToEnd(dom.chatScroll, true);
   try {
     const opening = { role: 'user', text: buildOpeningPrompt(), hidden: true };
-    // callGemini mengembalikan { text, sources } — ambil .text (bukan objeknya).
-    const { text: replyText } = await callGemini({
+    // providerChat mengembalikan { text, tokens, sources } — ambil .text (bukan objeknya).
+    const { text: replyText, tokens, sources } = await providerChat(state.settings.provider, {
       apiKey: state.apiKey,
       model: state.settings.model,
       systemPrompt: buildSystemPrompt({
@@ -519,10 +519,11 @@ async function generateGreeting() {
       }),
       contents: [opening],
       thinkingLevel: thinkingLevelFor(),
-      webSearch: false,
+      grounding: false,
+      customProviders: state.settings.providers || [],
     });
     removeTyping(typing);
-    const modelMsg = { role: 'model', text: replyText };
+    const modelMsg = { role: 'model', text: replyText, tokens, sources };
     state.messages.push(opening, modelMsg);
     const { msg, content, col } = addModelMessage(dom.messages);
     streamReply(content, replyText, msg); // onDone yang melepas busy
@@ -602,7 +603,7 @@ async function sendUserMessage(rawText, opts = {}) {
 
   let answered = false;
   try {
-    const { text: reply, sources } = await callGemini({
+    const { text: reply, tokens, sources } = await providerChat(state.settings.provider, {
       apiKey: state.apiKey,
       model: state.settings.model,
       systemPrompt: buildSystemPrompt({
@@ -613,10 +614,11 @@ async function sendUserMessage(rawText, opts = {}) {
       }),
       contents: buildContents(),
       thinkingLevel: thinkingLevelFor(),
-      webSearch: state.settings.webSearch,
+      grounding: state.settings.webSearch,
+      customProviders: state.settings.providers || [],
     });
     removeTyping(typing);
-    const modelMsg = { role: 'model', text: reply, sources };
+    const modelMsg = { role: 'model', text: reply, sources, tokens };
     state.messages.push(modelMsg);
     answered = true;
     const { msg, content, col } = addModelMessage(dom.messages);
@@ -686,7 +688,7 @@ function rerenderModelMessage(idx) {
   addCostFooter(built.col, msg.tokens, msg.cost ?? computeCost(msg));
 }
 
-// Regenerasi balasan model terakhir via planRedo → callGemini → rebuild bubble.
+// Regenerasi balasan model terakhir via planRedo → providerChat → rebuild bubble.
 async function regenerateLast() {
   if (state.busy) { showToast('Tunggu balasan tutor selesai dulu, ya.', 'info'); return; }
   if (!state.apiKey) { showToast('Masukkan kunci API dulu, ya.', 'error'); openSettingsAndFocus(dom.apiKey); return; }
@@ -701,7 +703,7 @@ async function regenerateLast() {
   scrollToEnd(dom.chatScroll, true);
 
   try {
-    const { text: reply, sources } = await callGemini({
+    const { text: reply, tokens, sources } = await providerChat(state.settings.provider, {
       apiKey: state.apiKey,
       model: state.settings.model,
       systemPrompt: buildSystemPrompt({
@@ -712,12 +714,13 @@ async function regenerateLast() {
       }),
       contents: plan.contents,
       thinkingLevel: thinkingLevelFor(),
-      webSearch: state.settings.webSearch,
+      grounding: state.settings.webSearch,
+      customProviders: state.settings.providers || [],
     });
     removeTyping(typing);
     const prev = state.messages[plan.modelIndex];
-    // cost = undefined sementara (Task 8); metadata lain ikut.
-    state.messages[plan.modelIndex] = { ...prev, text: reply, sources };
+    // tangkap tokens → simpan ke metadata (footer + updateStats ikut).
+    state.messages[plan.modelIndex] = { ...prev, text: reply, sources, tokens };
     rerenderModelMessage(plan.modelIndex);
     state.busy = false; // <-- PENTING: reset di jalur sukses agar tidak mengunci composer
   } catch (err) {
@@ -753,7 +756,7 @@ function rerenderModelMessagesFrom(startIdx) {
 }
 
 // EDIT (SUNTING): sunting user pada editIdx → regenerasi berurutan semua balasan
-// model setelahnya. Setiap balasan dipanggil ulang lewat callGemini dengan isi
+// model setelahnya. Setiap balasan dipanggil ulang lewat providerChat dengan isi
 // berjalan (lihat planEditRegenerations), lalu bubble-nya dire-render sekaligus.
 async function regenerateFrom(editIdx) {
   if (state.busy) { showToast('Tunggu balasan tutor selesai dulu, ya.', 'info'); return; }
@@ -772,14 +775,15 @@ async function regenerateFrom(editIdx) {
 
   try {
     for (const reg of regs) {
-      // callGemini → { text, sources } (tanpa token); param webSearch, bukan grounding.
-      const { text: reply, sources } = await callGemini({
+      // providerChat → { text, tokens, sources } (path OpenAI-generic). Tangkap token tiap iterasi edit-regen.
+      const { text: reply, tokens, sources } = await providerChat(state.settings.provider, {
         apiKey: state.apiKey, model: state.settings.model, systemPrompt: systemPrompt(),
-        contents: reg.contents, thinkingLevel: thinkingLevelFor(), webSearch: state.settings.webSearch,
+        contents: reg.contents, thinkingLevel: thinkingLevelFor(),
+        grounding: state.settings.webSearch, customProviders: state.settings.providers || [],
       });
       const prev = state.messages[reg.modelIndex];
-      // cost = undefined sementara (Task 8); text + sources ikut.
-      state.messages[reg.modelIndex] = { ...prev, text: reply, sources };
+      // tangkap tokens → simpan ke metadata (footer + updateStats ikut).
+      state.messages[reg.modelIndex] = { ...prev, text: reply, sources, tokens };
     }
     rerenderModelMessagesFrom(editIdx);
     state.busy = false;   // <-- reset di jalur sukses (poin penting)
@@ -1356,3 +1360,9 @@ function init() {
 }
 
 init();
+
+// ===== HUKUM UJIAN (test hook) — ekspos alur agar bisa dipanggil dari Node.
+// generateGreeting / sendUserMessage = titik masuk alur kirim model; state =
+// objek sesi yang dipakai seluruh modul. Hanya tambahan export, tidak mengubah
+// perilaku aplikasi di browser.
+export { generateGreeting, sendUserMessage, state };
