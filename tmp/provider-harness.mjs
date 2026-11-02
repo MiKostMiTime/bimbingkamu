@@ -65,6 +65,7 @@ class El {
   addEventListener(t, fn) { (this._handlers[t] = this._handlers[t] || []).push(fn); }
   removeEventListener() {}
   setAttribute(k, v) { if (k === 'class') this.className = v; else this.attributes[k] = v; }
+  removeAttribute(k) { delete this.attributes[k]; }
   getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attributes, k) ? this.attributes[k] : null; }
   hasAttribute(k) { return !!(this.attributes[k]); }
   querySelector() { return new El(); }
@@ -177,13 +178,16 @@ async function main() {
   assert.equal(body.model, 'qwen2.5-7b-instruct');
   log(`[OK] Fase 2: POST ${chatCall.url} tanpa header auth; body.model = ${body.model}.`);
 
-  // ===== FASE 3: footer "↑ in · ↓ out token" tanpa biaya =====
+  // ===== FASE 3: statistik token di HEADER (bukan footer per-chat) =====
+  const tokenEl = document._byId.tokenTotal;
+  assert(tokenEl, 'elemen #tokenTotal harus ada di header');
+  const ttext = tokenEl.textContent;
+  assert.equal(ttext, '↑ 120 · ↓ 240', `header harus "↑ 120 · ↓ 240", dapat: "${ttext}"`);
+  assert.ok(!ttext.includes('~$'), 'model lokal tanpa harga → TIDAK ada estimasi biaya');
+  // Footer per-chat TIDAK boleh ada lagi.
   const footers = El.registry.filter((e) => e.className === 'msg__footer');
-  assert(footers.length >= 1, 'footer harus dirender');
-  const ftext = footers[footers.length - 1].textContent;
-  assert.equal(ftext, '↑ 120 · ↓ 240 token', `footer harus "↑ 120 · ↓ 240 token", dapat: "${ftext}"`);
-  assert.ok(!ftext.includes('~$'), 'model lokal tanpa harga → TIDAK ada estimasi biaya');
-  log(`[OK] Fase 3: footer = "${ftext}" (tanpa biaya — graceful).`);
+  assert.equal(footers.length, 0, 'footer token per-chat harus sudah dihapus');
+  log(`[OK] Fase 3: statistik header = "${ttext}" (footer per-chat dihapus; tanpa biaya — graceful).`);
 
   log('');
   log('SEMUA ASSERTION PASS — provider kustom + token ↑↓ + migrasi bekerja.');

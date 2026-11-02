@@ -1,32 +1,71 @@
 // js/pricing.js
-// Tabel harga indikatif per 1M token (USD). Fokus: token keluar (completion).
-export const PRICES = {
-  'gpt-4o-mini': { input: 0.15, output: 0.6 },
-  'gpt-4o': { input: 2.5, output: 10 },
-  'deepseek-v3': { input: 0.27, output: 1.1 },
-  'deepseek-r1': { input: 0.55, output: 2.19 },
-  // wildcard prefix (diakhiri *):
-  'qwen-*': { input: 0, output: 0 },
-  'groq-*': { input: 0, output: 0 },
-};
+// Harga model & kurs TIDAK di-hardcode:
+// - Harga model bersumber dari endpoint (mis. OpenRouter /api/v1/models)
+//   atau input manual user di Pengaturan (per 1M token, USD).
+// - Kurs USD→IDR diambil dari API kurs publik (cache 24 jam di localStorage);
+//   user bisa override di Pengaturan.
+// Semua fungsi murni menerima angka — tanpa tabel harga bawaan.
 
-export function findPrice(modelId) {
-  if (!modelId) return null;
-  // match eksak duluan, baru wildcard prefix (mis. qwen-max → qwen-*)
-  if (PRICES[modelId]) return PRICES[modelId];
-  for (const key of Object.keys(PRICES)) {
-    if (key.endsWith('*') && modelId.startsWith(key.slice(0, -1))) return PRICES[key];
-  }
+// ===== KURS USD→IDR (DINAMIS) =====
+const RATE_CACHE_KEY = 'tanyabukan.usdIdr';
+const RATE_TTL = 24 * 60 * 60 * 1000; // 24 jam
+
+// Ambil kurs dari cache; null bila tidak ada / kedaluwarsa.
+export function cachedUsdIdr(now = Date.now()) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(RATE_CACHE_KEY) || 'null');
+    if (raw && typeof raw.rate === 'number' && raw.rate > 0 && now - raw.at < RATE_TTL) {
+      return raw.rate;
+    }
+  } catch {}
   return null;
 }
 
-export function estimateCost(modelId, tokens = {}) {
-  const price = findPrice(modelId);
-  if (!price) return null;
-  const completion = tokens.completion ?? 0;
-  return +(completion * price.output / 1e6).toFixed(6);
+// Simpan kurs hasil fetch ke cache.
+export function cacheUsdIdr(rate, now = Date.now()) {
+  try { localStorage.setItem(RATE_CACHE_KEY, JSON.stringify({ rate, at: now })); } catch {}
 }
 
+// Fetch kurs live dari API publik tanpa kunci (open.er-api.com).
+// Gagal / offline → null (pemanggil pakai cache atau default manual user).
+export async function fetchUsdIdr() {
+  try {
+    const res = await fetch('https://open.er-api.com/v6/latest/USD');
+    if (!res.ok) return null;
+    const data = await res.json();
+    const rate = data && data.rates && Number(data.rates.IDR);
+    if (Number.isFinite(rate) && rate > 0) {
+      cacheUsdIdr(rate);
+      return rate;
+    }
+  } catch {}
+  return null;
+}
+
+// Kurs efektif: override manual user → cache → null (tak bisa hitung).
+export function effectiveUsdIdr(manualRate) {
+  const m = Number(manualRate);
+  if (Number.isFinite(m) && m > 0) return m;
+  return cachedUsdIdr();
+}
+
+// ===== ESTIMASI BIAYA =====
+// price = { input, output } per 1M token USD (dari endpoint / input user).
+// null price → biaya tak diketahui.
+export function estimateCost(price, tokens = {}) {
+  if (!price || typeof price.input !== 'number' || typeof price.output !== 'number') return null;
+  const usd = ((tokens.prompt ?? 0) * price.input + (tokens.completion ?? 0) * price.output) / 1e6;
+  return +usd.toFixed(6);
+}
+
+// ===== FORMAT =====
+export function formatCostIDR(usd, rate) {
+  if (typeof usd !== 'number' || typeof rate !== 'number') return null;
+  const idr = Math.round(usd * rate);
+  return `Rp${idr.toLocaleString('id-ID')}`;
+}
+
+// Format USD internal (ekspor data).
 export function formatCost(usd) {
   return `$${Number(usd).toFixed(2)}`;
 }

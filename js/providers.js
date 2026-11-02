@@ -102,6 +102,52 @@ export async function fetchContextLimit(provider, apiKey, model) {
   }
 }
 
+// ===== HARGA MODEL (DINAMIS, tanpa hardcode) =====
+// Prioritas sumber harga { input, output } per 1M token (USD):
+//   1. provider.pricing — input manual user di Pengaturan (sumber termurah &
+//      paling benar untuk endpoint berbayar yang tak melaporkan harga).
+//   2. LM Studio /api/v0/models → model lokal → Rp0 (gratis, tidak berbayar).
+//   3. OpenRouter (baseUrl mengandung openrouter.ai) → GET /api/v1/models
+//      live pricing dari endpoint itu sendiri.
+// Selain itu → null (UI menampilkan token tanpa biaya).
+export async function fetchModelPricing(provider, apiKey, model) {
+  if (!provider || !provider.baseUrl || !model) return null;
+  // 1) Input manual user menang.
+  const p = provider.pricing;
+  if (p && Number(p.input) >= 0 && Number(p.output) >= 0 && (Number(p.input) || Number(p.output))) {
+    return { input: Number(p.input), output: Number(p.output), source: 'manual' };
+  }
+  // 2) LM Studio → endpoint lokal, model gratis.
+  const isLMStudio = await probeLMStudio(provider, apiKey);
+  if (isLMStudio) return { input: 0, output: 0, source: 'local' };
+  // 3) OpenRouter → live pricing dari endpoint-nya.
+  if (/openrouter\.ai/i.test(provider.baseUrl)) {
+    try {
+      const res = await fetch('https://openrouter.ai/api/v1/models', { headers: authHeader(apiKey) });
+      if (res.ok) {
+        const data = await res.json();
+        const found = (data.data || []).find((m) => m && (m.id === model || String(m.id || '').endsWith(`/${model}`)));
+        const pr = found && found.pricing;
+        if (pr && pr.prompt != null && pr.completion != null) {
+          // OpenRouter pakai USD per TOKEN → kali 1e6 jadi per 1M token.
+          return { input: +pr.prompt * 1e6, output: +pr.completion * 1e6, source: 'openrouter' };
+        }
+      }
+    } catch {}
+  }
+  return null;
+}
+
+// Deteksi LM Studio: /api/v0/models merespons ok → endpoint lokal.
+async function probeLMStudio(provider, apiKey) {
+  try {
+    const res = await fetch(`${provider.baseUrl}/api/v0/models`, { headers: authHeader(apiKey) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 // Ambil daftar ID model chat-capable dari endpoint provider.
 // GET ${baseUrl}${modelsPath} → filter model yang bisa chat, dedup per id.
 export async function listModels(apiKey, provider) {

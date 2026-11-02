@@ -3,9 +3,9 @@
 // Entry point: inisialisasi modul, state sesi, event binding.
 // =========================================================
 import { STORAGE_KEYS, getLevelLabel, migrateLegacyProviderSettings } from './config.js';
-import { estimateCost, formatCost } from './pricing.js';
+import { estimateCost, formatCostIDR, fetchUsdIdr, effectiveUsdIdr } from './pricing.js';
 import { storage } from './storage.js';
-import { resolveProviders, listModels, providerChat, probeEndpoint, fetchContextLimit } from './providers.js';
+import { resolveProviders, listModels, providerChat, probeEndpoint, fetchContextLimit, fetchModelPricing } from './providers.js';
 import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
 import { extractPdfText } from './pdf.js';
 import { extractDocxText } from './docx.js';
@@ -82,6 +82,9 @@ const dom = {
   timer: $('timerValue'),
   turns: $('turnValue'),
   tokenTotal: $('tokenTotal'),
+  priceInput: $('priceInputPer1M'),
+  priceOutput: $('priceOutputPer1M'),
+  usdIdrInput: $('usdIdrInput'),
   exportBtn: $('exportBtn'),
   chatScroll: $('chatScroll'),
   messages: $('chatMessages'),
@@ -92,7 +95,7 @@ const dom = {
 // ===== STATE =====
 // TIDAK ada provider/model bawaan — keduanya wajib dipilih dari endpoint
 // yang dihubungkan user (onboarding / drawer Pengaturan).
-const DEFAULT_SETTINGS = { mode: 'konsep', level: 3, model: '', webSearch: true, provider: '', providers: [] };
+const DEFAULT_SETTINGS = { mode: 'konsep', level: 3, model: '', webSearch: true, provider: '', providers: [], usdIdrManual: '' };
 
 // Bersihkan jejak data lama (provider 'gemini', model gemini-*) agar
 // onboarding endpoint muncul lagi. Riwayat chat tidak disentuh.
@@ -102,6 +105,8 @@ function loadSettings() {
 
 const state = {
   contextLimit: null, // context window model aktif (dari LM Studio /api/v0) — null bila tak diketahui
+  pricing: null, // { input, output, source } per 1M token USD — dari endpoint / input user
+  usdIdr: null, // kurs live (cache) — null bila belum tersedia
   apiKey: storage.get(STORAGE_KEYS.apiKey, ''), // kunci umum (fallback bila endpoint tak punya kunci sendiri)
   materiFiles: [], // file sesi AKTIF { name, chars, text } — per chat, bukan global
   settings: loadSettings(),
@@ -195,6 +200,16 @@ async function refreshProviderModelList() {
     fetchContextLimit(provider, activeApiKey(), state.settings.model).then((n) => {
       state.contextLimit = n;
       renderTokenStat(); // persentase konteks di header ikut muncul
+    });
+    // Harga model (dinamis: input user → LM Studio lokal → OpenRouter live).
+    fetchModelPricing(provider, activeApiKey(), state.settings.model).then((pr) => {
+      state.pricing = pr;
+      renderTokenStat();
+    });
+    // Kurs USD→IDR (cache 24 jam; manual user menang).
+    state.usdIdr = effectiveUsdIdr(state.settings.usdIdrManual);
+    if (!state.settings.usdIdrManual) fetchUsdIdr().then((r) => {
+      if (r) { state.usdIdr = r; renderTokenStat(); }
     });
   } catch (err) {
     updateConnStatus('error');
@@ -892,6 +907,39 @@ function hydrateSettings() {
     (o) => o.value === state.settings.model
   );
   if (hasSavedModel) dom.model.value = state.settings.model;
+  // Harga manual (tersimpan per endpoint) + kurs override.
+  const active = currentProviders()[state.settings.provider];
+  const pr = active && active.pricing;
+  dom.priceInput.value = pr && Number.isFinite(Number(pr.input)) ? pr.input : '';
+  dom.priceOutput.value = pr && Number.isFinite(Number(pr.output)) ? pr.output : '';
+  dom.usdIdrInput.value = state.settings.usdIdrManual || '';
+}
+
+// Simpan harga manual (USD/1M) untuk endpoint aktif + kurs override,
+// lalu hitung ulang pricing sesi & statistik header.
+function applyPricingInputs() {
+  const inP = parseFloat(dom.priceInput.value);
+  const outP = parseFloat(dom.priceOutput.value);
+  const hasPrice = Number.isFinite(inP) && Number.isFinite(outP) && (inP > 0 || outP > 0);
+  const provider = currentProviders()[state.settings.provider];
+  if (provider) {
+    provider.pricing = hasPrice ? { input: inP, output: outP } : undefined;
+    state.settings.providers = (state.settings.providers || []).map((p) =>
+      p.id === provider.id ? { ...p, pricing: provider.pricing } : p
+    );
+  }
+  const manual = parseFloat(dom.usdIdrInput.value);
+  state.settings.usdIdrManual = Number.isFinite(manual) && manual > 0 ? String(manual) : '';
+  persistSettings();
+  // Hitung ulang langsung (tanpa menunggu probe ulang endpoint).
+  if (hasPrice) state.pricing = { input: inP, output: outP, source: 'manual' };
+  else fetchModelPricing(provider, activeApiKey(), state.settings.model).then((pr2) => {
+    state.pricing = pr2;
+    renderTokenStat();
+  });
+  state.usdIdr = effectiveUsdIdr(state.settings.usdIdrManual);
+  if (!state.settings.usdIdrManual) fetchUsdIdr().then((r) => { if (r) { state.usdIdr = r; renderTokenStat(); } });
+  renderTokenStat();
 }
 
 function updateMateriCount() {
@@ -978,7 +1026,7 @@ function updateLevelLabel() {
 // Biaya estimasi satu pesan model dari token keluarnya (completion) pada model
 // aktif. estimateCost mengembalikan null bila harga model belum diketahui.
 function computeCost(msg) {
-  return estimateCost(state.settings.model, msg.tokens || {});
+  return estimateCost(state.pricing, msg.tokens || {});
 }
 
 // Ringkasan sesi: token keluar total + token masuk balasan TERAKHIR
@@ -1009,17 +1057,27 @@ function renderTokenStat() {
   const inTok = stats.lastPrompt.toLocaleString('id-ID');
   const outTok = stats.completion.toLocaleString('id-ID');
   let text = `↑ ${inTok} · ↓ ${outTok}`;
-  if (typeof stats.cost === 'number' && stats.cost > 0) text += ` · ~${formatCost(stats.cost)}`;
+  const rate = effectiveUsdIdr(state.settings.usdIdrManual);
+  if (typeof stats.cost === 'number' && rate) {
+    const rp = formatCostIDR(stats.cost, rate);
+    if (rp) text += ` · ~${rp}`; // model lokal → "Rp0"
+  }
   dom.tokenTotal.textContent = text;
   dom.tokenTotal.removeAttribute('style');
+  let title = '';
   if (state.contextLimit) {
     const pct = Math.round((stats.lastPrompt / state.contextLimit) * 100);
     const warn = pct >= 90 ? '#dc2626' : pct >= 75 ? '#d97706' : null;
     if (warn) dom.tokenTotal.style.color = warn;
-    dom.tokenTotal.title = `Konteks terpakai ±${pct}% dari ${state.contextLimit.toLocaleString('id-ID')} token model ini (↑ prompt terakhir).`;
+    title = `Konteks terpakai ±${pct}% dari ${state.contextLimit.toLocaleString('id-ID')} token model ini (↑ prompt terakhir).`;
   } else {
-    dom.tokenTotal.title = 'Context limit model tidak dilaporkan endpoint (hanya LM Studio yang menyediakannya).';
+    title = 'Context limit model tidak dilaporkan endpoint (hanya LM Studio yang menyediakannya).';
   }
+  if (state.pricing) {
+    title += ` Harga: ${state.pricing.source === 'local' ? 'lokal/gratis' : state.pricing.source === 'manual' ? 'diisi manual' : 'dari endpoint'}`;
+    if (rate) title += `; kurs Rp${rate.toLocaleString('id-ID')}/USD.`;
+  }
+  dom.tokenTotal.title = title;
 }
 
 // ===== STATISTIK & STATUS UI =====
@@ -1186,6 +1244,9 @@ function bindEvents() {
     renderProviderOptions();
     refreshProviderModelList();
   });
+  dom.priceInput.addEventListener('change', applyPricingInputs);
+  dom.priceOutput.addEventListener('change', applyPricingInputs);
+  dom.usdIdrInput.addEventListener('change', applyPricingInputs);
   dom.addCustomProvider.addEventListener('click', () => {
     connectEndpoint({
       baseUrl: dom.customBaseUrl.value,
