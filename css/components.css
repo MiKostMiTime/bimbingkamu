@@ -446,19 +446,21 @@
   min-width: 0;
 }
 
-/* Selector endpoint + model di header chat */
-.chat-header__provider {
+/* Selector endpoint + model di APP-HEADER (gaya chatbot: pilih model di bar atas) */
+.app-header__model {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  margin-left: var(--space-4);
 }
 
-.chat-header__provider .select--sm {
-  max-width: 220px;
+.app-header__model .select--sm {
+  max-width: 200px;
   font-size: var(--text-caption);
-  padding: 4px 24px 4px 8px;
+  padding: 5px 24px 5px 10px;
+  text-overflow: ellipsis;
 }
 
 .conn-status {
@@ -1245,6 +1247,49 @@ input, textarea, select,
   .composer__input-wrap { flex-wrap: wrap; }
   #hintBtn { order: -1; }
   .composer textarea { flex: 1 1 100%; }
+}
+
+/* ===== MOBILE-FIRST REFINEMENT (≤640px) ===== */
+@media (max-width: 640px) {
+  /* Header: brand meringkas, selector model tetap bisa diakses */
+  .app-header { gap: var(--space-2); padding: var(--space-2) var(--space-3); }
+  .app-header__model { margin-left: 0; }
+  .app-header__model .select--sm { max-width: 118px; padding: 4px 20px 4px 8px; }
+  .conn-status { display: none; } /* status cukup terlihat dari indikator gagal/berhasil saat connect */
+
+  /* Statistik durasi/giliran/biaya disembunyikan — area chat lebih lega */
+  .chat-header__stats { display: none; }
+  .chat-header { padding: var(--space-2) var(--space-3); }
+
+  /* Tombol jadi icon-only (seperti chatbot umum) */
+  .btn__label { display: none; }
+  #sendBtn {
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    padding: 0;
+    border-radius: 50%;
+    justify-content: center;
+  }
+  #sendBtn svg { width: 18px; height: 18px; }
+  #hintBtn { padding: 6px 10px; }
+  #hintBtn svg { width: 16px; height: 16px; }
+
+  /* Composer: input melebar, tombol kirim menempel di kanan */
+  .composer { padding: var(--space-2) var(--space-3); }
+  .composer__inner { gap: var(--space-2); }
+  .composer textarea { font-size: 16px; } /* cegah zoom otomatis iOS */
+}
+
+/* Layar sempit ekstrem (≤380px): pilih model saja, endpoint di drawer */
+@media (max-width: 380px) {
+  #providerSelect { display: none; }
+}
+
+/* Tablet kecil (641–820px): pilih model lebih lega, stat biaya disembunyikan */
+@media (min-width: 641px) and (max-width: 820px) {
+  .app-header__model .select--sm { max-width: 150px; }
+  .app-header__tagline { display: none; }
 }
 
 /* Tombol hapus sesi terlihat di layar sentuh */
