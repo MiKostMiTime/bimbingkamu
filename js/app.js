@@ -5,7 +5,7 @@
 import { STORAGE_KEYS, getLevelLabel, migrateLegacyProviderSettings } from './config.js';
 import { estimateCost, formatCost } from './pricing.js';
 import { storage } from './storage.js';
-import { resolveProviders, listModels, providerChat, probeEndpoint } from './providers.js';
+import { resolveProviders, listModels, providerChat, probeEndpoint, fetchContextLimit } from './providers.js';
 import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
 import { extractPdfText } from './pdf.js';
 import { extractDocxText } from './docx.js';
@@ -32,7 +32,6 @@ import {
   renderRich,
   renderSources,
   addRedoButton,
-  addCostFooter,
   setMateriProvider,
 } from './chat.js';
 import {
@@ -82,7 +81,7 @@ const dom = {
   webSearchToggle: $('webSearchToggle'),
   timer: $('timerValue'),
   turns: $('turnValue'),
-  costTotal: $('costTotal'),
+  tokenTotal: $('tokenTotal'),
   exportBtn: $('exportBtn'),
   chatScroll: $('chatScroll'),
   messages: $('chatMessages'),
@@ -102,6 +101,7 @@ function loadSettings() {
 }
 
 const state = {
+  contextLimit: null, // context window model aktif (dari LM Studio /api/v0) — null bila tak diketahui
   apiKey: storage.get(STORAGE_KEYS.apiKey, ''), // kunci umum (fallback bila endpoint tak punya kunci sendiri)
   materiFiles: [], // file sesi AKTIF { name, chars, text } — per chat, bukan global
   settings: loadSettings(),
@@ -191,6 +191,11 @@ async function refreshProviderModelList() {
     state.settings.model = dom.model.value;
     persistSettings();
     updateConnStatus('ok');
+    // Context limit (opsional — hanya LM Studio yang melaporkannya).
+    fetchContextLimit(provider, activeApiKey(), state.settings.model).then((n) => {
+      state.contextLimit = n;
+      renderTokenStat(); // persentase konteks di header ikut muncul
+    });
   } catch (err) {
     updateConnStatus('error');
     console.warn('[TanyaBukan] gagal memuat daftar model endpoint:', err && err.message);
@@ -449,7 +454,6 @@ function renderMessagesFromState() {
       renderRich(content, m.text);
       renderSources(msg, m.sources, { onSave: () => saveWebMateri(m.sources) });
       addRedoButton(col, regenerateLast);
-      addCostFooter(col, m.tokens, m.cost ?? computeCost(m));
     } else {
       addNotice(dom.messages, m.text, m.role);
     }
@@ -562,7 +566,6 @@ async function generateGreeting() {
     const { msg, content, col } = addModelMessage(dom.messages);
     streamReply(content, replyText, msg); // onDone yang melepas busy
     addRedoButton(col, regenerateLast);
-    addCostFooter(col, modelMsg.tokens, modelMsg.cost ?? computeCost(modelMsg));
   } catch (err) {
     removeTyping(typing);
     state.busy = false;
@@ -659,7 +662,6 @@ async function sendUserMessage(rawText, opts = {}) {
     streamReply(content, reply, msg); // onDone yang melepas busy
     renderSources(msg, sources, { onSave: () => saveWebMateri(sources) });
     addRedoButton(col, regenerateLast);
-    addCostFooter(col, modelMsg.tokens, modelMsg.cost ?? computeCost(modelMsg));
   } catch (err) {
     removeTyping(typing);
     state.busy = false;
@@ -719,7 +721,6 @@ function rerenderModelMessage(idx) {
   renderRich(built.content, msg.text || '');
   renderSources(built.msg, msg.sources || [], { onSave: () => saveWebMateri(msg.sources || []) });
   addRedoButton(built.col, regenerateLast);
-  addCostFooter(built.col, msg.tokens, msg.cost ?? computeCost(msg));
 }
 
 // Regenerasi balasan model terakhir via planRedo → providerChat → rebuild bubble.
@@ -784,7 +785,6 @@ function rerenderModelMessagesFrom(startIdx) {
       renderRich(built.content, m.text || '');
       renderSources(built.msg, m.sources || [], { onSave: () => saveWebMateri(m.sources || []) });
       addRedoButton(built.col, regenerateLast);
-      addCostFooter(built.col, m.tokens, m.cost ?? computeCost(m));
     } else addNotice(dom.messages, m.text, m.role);
   }
 }
@@ -981,23 +981,52 @@ function computeCost(msg) {
   return estimateCost(state.settings.model, msg.tokens || {});
 }
 
-// Ringkasan total sesi: seluruh pesan model → jumlah token completion + total biaya.
+// Ringkasan sesi: token keluar total + token masuk balasan TERAKHIR
+// (≈ ukuran konteks yang dikirim ke model saat itu) + biaya.
 function sessionStats() {
   const modelMsgs = state.messages.filter((m) => m.role === 'model');
   const totalCompletion = modelMsgs.reduce((n, m) => n + (m.tokens?.completion || 0), 0);
+  const lastPrompt = modelMsgs.length ? (modelMsgs[modelMsgs.length - 1].tokens?.prompt || 0) : 0;
   const totalCost = modelMsgs.reduce((n, m) => {
     const c = m.cost ?? computeCost(m);
     return n + (typeof c === 'number' ? c : 0);
   }, 0);
-  return { completion: totalCompletion, cost: totalCost };
+  return { completion: totalCompletion, lastPrompt, cost: totalCost };
+}
+
+// Render statistik token di header: "↑ in · ↓ out · $cost" + persentase
+// pemakaian context window (bila diketahui dari endpoint). Warna berubah
+// saat mendekati batas (≥75% kuning, ≥90% merah).
+function renderTokenStat() {
+  if (!dom.tokenTotal) return;
+  const stats = sessionStats();
+  if (!stats.lastPrompt && !stats.completion) {
+    dom.tokenTotal.textContent = '—';
+    dom.tokenTotal.removeAttribute('style');
+    dom.tokenTotal.title = 'Belum ada token tercatat.';
+    return;
+  }
+  const inTok = stats.lastPrompt.toLocaleString('id-ID');
+  const outTok = stats.completion.toLocaleString('id-ID');
+  let text = `↑ ${inTok} · ↓ ${outTok}`;
+  if (typeof stats.cost === 'number' && stats.cost > 0) text += ` · ~${formatCost(stats.cost)}`;
+  dom.tokenTotal.textContent = text;
+  dom.tokenTotal.removeAttribute('style');
+  if (state.contextLimit) {
+    const pct = Math.round((stats.lastPrompt / state.contextLimit) * 100);
+    const warn = pct >= 90 ? '#dc2626' : pct >= 75 ? '#d97706' : null;
+    if (warn) dom.tokenTotal.style.color = warn;
+    dom.tokenTotal.title = `Konteks terpakai ±${pct}% dari ${state.contextLimit.toLocaleString('id-ID')} token model ini (↑ prompt terakhir).`;
+  } else {
+    dom.tokenTotal.title = 'Context limit model tidak dilaporkan endpoint (hanya LM Studio yang menyediakannya).';
+  }
 }
 
 // ===== STATISTIK & STATUS UI =====
 function updateStats() {
   setDialogCount(dom.turns, turnCount());
   dom.exportBtn.disabled = !state.messages.length;
-  const stats = sessionStats();
-  dom.costTotal.textContent = formatCost(stats.cost);
+  renderTokenStat();
 }
 
 function updateComposer() {

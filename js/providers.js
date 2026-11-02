@@ -83,6 +83,25 @@ export async function probeEndpoint(baseUrl, apiKey = '') {
   };
 }
 
+// ===== CONTEXT LIMIT (LM Studio /api/v0) =====
+// API [OI]-compat standar tidak melaporkan context window. LM Studio
+// menyediakannya lewat REST /api/v0/models (field max_context_length).
+// Bila endpoint bukan LM Studio → return null (UI menampilkan tanda "-").
+export async function fetchContextLimit(provider, apiKey, model) {
+  if (!provider || !provider.baseUrl || !model) return null;
+  try {
+    const res = await fetch(`${provider.baseUrl}/api/v0/models`, { headers: authHeader(apiKey) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const list = Array.isArray(data.data) ? data.data : [];
+    const found = list.find((m) => m && (m.id === model || String(m.id || '').endsWith(`/${model}`)));
+    const n = found && Number(found.max_context_length);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null; // endpoint lain / offline → bukan masalah, hanya tanpa info
+  }
+}
+
 // Ambil daftar ID model chat-capable dari endpoint provider.
 // GET ${baseUrl}${modelsPath} → filter model yang bisa chat, dedup per id.
 export async function listModels(apiKey, provider) {
