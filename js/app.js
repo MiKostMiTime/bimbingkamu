@@ -558,9 +558,13 @@ async function generateGreeting() {
   updateComposer();
   const typing = showTyping(dom.messages);
   scrollToEnd(dom.chatScroll, true);
+  let built = null;
   try {
     const opening = { role: 'user', text: buildOpeningPrompt(), hidden: true };
-    // providerChat mengembalikan { text, tokens, sources } — ambil .text (bukan objeknya).
+    removeTyping(typing);
+    // Bubble dibuat sebelum await → token SSE mengalir langsung ke layar.
+    const built = addModelMessage(dom.messages);
+    let streamed = false;
     const { text: replyText, tokens, sources } = await providerChat(state.settings.provider, {
       apiKey: activeApiKey(),
       model: state.settings.model,
@@ -574,16 +578,22 @@ async function generateGreeting() {
       thinkingLevel: thinkingLevelFor(),
       grounding: false,
       customProviders: state.settings.providers || [],
+      onDelta: (acc) => { streamed = true; renderRich(built.content, acc); scrollToEnd(dom.chatScroll); },
     });
-    removeTyping(typing);
     const modelMsg = { role: 'model', text: replyText, tokens, sources };
     state.messages.push(opening, modelMsg);
-    const { msg, content, col } = addModelMessage(dom.messages);
-    streamReply(content, replyText, msg); // onDone yang melepas busy
-    addRedoButton(col, regenerateLast);
+    if (streamed) {
+      renderRich(built.content, replyText); // render final (markdown lengkap)
+      state.busy = false;
+      scrollToEnd(dom.chatScroll);
+    } else {
+      streamReply(built.content, replyText, built.msg); // fallback: endpoint tanpa SSE
+    }
+    addRedoButton(built.col, regenerateLast);
   } catch (err) {
     removeTyping(typing);
     state.busy = false;
+    if (built) built.msg.remove(); // buang bubble setengah jadi saat stream gagal
     const text = errorDisplayText(err);
     addNotice(dom.messages, text, 'error');
     showToast(text, 'error');
@@ -654,7 +664,12 @@ async function sendUserMessage(rawText, opts = {}) {
   scrollToEnd(dom.chatScroll, true);
 
   let answered = false;
+  let built = null;
   try {
+    removeTyping(typing);
+    // Bubble dibuat sebelum await → token SSE mengalir langsung ke layar.
+    built = addModelMessage(dom.messages);
+    let streamed = false;
     const { text: reply, tokens, sources } = await providerChat(state.settings.provider, {
       apiKey: activeApiKey(),
       model: state.settings.model,
@@ -668,15 +683,20 @@ async function sendUserMessage(rawText, opts = {}) {
       thinkingLevel: thinkingLevelFor(),
       grounding: state.settings.webSearch,
       customProviders: state.settings.providers || [],
+      onDelta: (acc) => { streamed = true; renderRich(built.content, acc); scrollToEnd(dom.chatScroll); },
     });
-    removeTyping(typing);
     const modelMsg = { role: 'model', text: reply, sources, tokens };
     state.messages.push(modelMsg);
     answered = true;
-    const { msg, content, col } = addModelMessage(dom.messages);
-    streamReply(content, reply, msg); // onDone yang melepas busy
-    renderSources(msg, sources, { onSave: () => saveWebMateri(sources) });
-    addRedoButton(col, regenerateLast);
+    if (streamed) {
+      renderRich(built.content, reply); // render final (markdown lengkap)
+      state.busy = false;
+      scrollToEnd(dom.chatScroll);
+    } else {
+      streamReply(built.content, reply, built.msg); // fallback: endpoint tanpa SSE
+    }
+    renderSources(built.msg, sources, { onSave: () => saveWebMateri(sources) });
+    addRedoButton(built.col, regenerateLast);
   } catch (err) {
     removeTyping(typing);
     state.busy = false;
@@ -684,6 +704,7 @@ async function sendUserMessage(rawText, opts = {}) {
       // Batalkan giliran yang gagal: riwayat API tetap bergantian rapi,
       // gelembung dibuang, dan ketikan siswa dikembalikan ke kotak input.
       state.messages.pop();
+      if (built) built.msg.remove();
       userEl.remove();
       if (fromInput) {
         dom.input.value = text;

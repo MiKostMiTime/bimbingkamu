@@ -184,12 +184,15 @@ export async function listModels(apiKey, provider) {
 
 // ===== CHAT COMPLETION (PATH OPENAI) =====
 // POST ${baseUrl}${chatPath} body { model, messages, max_tokens, tools?, generationConfig? }.
-// Parameter: { provider, apiKey, model, systemPrompt, contents, maxTokens, thinkingLevel, grounding }
+// Parameter: { provider, apiKey, model, systemPrompt, contents, maxTokens, thinkingLevel, grounding, onDelta }
 // `contents` = array { role: 'user'|'model', text } (riwayat penuh).
+// onDelta(akumulasi) — bila fungsi diberikan, request streaming (SSE) dan
+// tiap token dipanggil balik ke UI secara live; endpoint/browser yang tidak
+// mendukung otomatis jatuh ke jalur non-stream biasa.
 // Mengembalikan Promise<{ text, tokens:{prompt,completion,total}, sources }>.
 export async function chatCompletion({
   provider, apiKey, model, systemPrompt, contents,
-  maxTokens = 8192, thinkingLevel, grounding,
+  maxTokens = 8192, thinkingLevel, grounding, onDelta,
 }) {
   if (!provider || !provider.baseUrl) {
     throw { type: 'badrequest', message: 'Pilih endpoint & model dulu, ya.' };
@@ -199,6 +202,11 @@ export async function chatCompletion({
   for (const m of contents || []) messages.push({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text });
 
   const body = { model, messages, max_tokens: maxTokens };
+  const wantStream = typeof onDelta === 'function';
+  if (wantStream) {
+    body.stream = true;
+    body.stream_options = { include_usage: true }; // minta usage di chunk terakhir
+  }
   if (provider.supportsThinking && thinkingLevel) {
     body.generationConfig = { thinkingLevel }; // hanya provider yang mendukung
   }
@@ -228,6 +236,22 @@ export async function chatCompletion({
     if (!res.ok) throw { ...mapApiError(res.status, apiMessage) };
   }
 
+  // Jalur SSE: baca data: {...} per chunk, akumulasi delta.content,
+  // panggil onDelta live, kumpulkan usage dari chunk terakhir.
+  if (wantStream && res.body && typeof res.body.getReader === 'function') {
+    const streamed = await readSSE(res, onDelta);
+    return {
+      text: streamed.text.trim(),
+      tokens: {
+        prompt: streamed.usage?.prompt_tokens ?? undefined,
+        completion: streamed.usage?.completion_tokens ?? undefined,
+        total: streamed.usage?.total_tokens ?? undefined,
+      },
+      sources: [],
+    };
+  }
+
+  // Jalur non-stream (fallback: tanpa onDelta, atau res.body tak didukung).
   const data = await res.json();
   const choice = data.choices && data.choices[0];
   const text = (choice && choice.message && choice.message.content) || '';
@@ -240,6 +264,43 @@ export async function chatCompletion({
   let sources = [];
   if (data.candidates) sources = extractSources(data.candidates[0]); // sumber grounding bila ada
   return { text: text.trim(), tokens, sources };
+}
+
+// Parser SSE untuk chat streaming (format OpenAI):
+// baris "data: {json}" diakhiri "data: [DONE]". Delta konten diambil dari
+// choices[0].delta.content; usage (bila dikirim endpoint) dari chunk mana pun.
+async function readSSE(res, onDelta) {
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '', text = '', usage = null;
+  const handle = (payload) => {
+    if (payload === '[DONE]') return;
+    let ev; try { ev = JSON.parse(payload); } catch { return; } // baris rusak → lewati
+    const choice = ev.choices && ev.choices[0];
+    const delta = choice && choice.delta && choice.delta.content;
+    if (delta) { text += delta; onDelta(text); }
+    if (ev.usage) usage = ev.usage;
+  };
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (line.startsWith('data:')) handle(line.slice(5).trim());
+      }
+    }
+    // Sisa buffer tanpa newline di akhir stream.
+    const tail = buf.trim();
+    if (tail.startsWith('data:')) handle(tail.slice(5).trim());
+  } catch (err) {
+    if (text) return { text, usage }; // stream putus di tengah → pakai yang sudah datang
+    throw { ...mapApiError(0), message: (err && err.message) || 'Koneksi streaming terputus.' };
+  }
+  return { text, usage };
 }
 
 // Bangun & kirim POST chat; tambahkan tools grounding bila diminta + didukung.

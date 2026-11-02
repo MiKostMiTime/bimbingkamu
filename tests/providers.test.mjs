@@ -11,6 +11,44 @@ function stubFetch(responder) {
 }
 const okRes = (json) => ({ ok: true, status: 200, json: async () => json });
 
+// ---------- SSE streaming ----------
+function sseRes(chunks) {
+  const enc = new TextEncoder();
+  return {
+    ok: true, status: 200,
+    body: new ReadableStream({
+      start(c) { for (const ch of chunks) c.enqueue(enc.encode(ch)); c.close(); },
+    }),
+  };
+}
+
+test('chatCompletion: onDelta → stream SSE, token live, usage dari chunk', async () => {
+  const deltas = [];
+  const calls = stubFetch(() => sseRes([
+    'data: {"choices":[{"delta":{"content":"Halo "}}]}\n\n',
+    'data: {"choices":[{"delta":{"content":"siswa!"}}]}\n\n',
+    'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}}\n\n',
+    'data: [DONE]\n\n',
+  ]));
+  const r = await chatCompletion({
+    provider: { baseUrl: 'http://x', chatPath: '/chat/completions' }, apiKey: '',
+    model: 'm', contents: [{ role: 'user', text: 'hai' }],
+    onDelta: (acc) => deltas.push(acc),
+  });
+  assert.deepEqual(deltas, ['Halo ', 'Halo siswa!']);   // akumulasi live
+  assert.equal(r.text, 'Halo siswa!');
+  assert.deepEqual(r.tokens, { prompt: 10, completion: 3, total: 13 });
+  assert.equal(JSON.parse(calls[0].init.body).stream, true); // body minta stream
+});
+
+test('chatCompletion: tanpa onDelta → jalur non-stream biasa (tanpa body.stream)', async () => {
+  const calls = stubFetch(() => okRes({ choices: [{ message: { content: 'Jawaban penuh.' } }], usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 } }));
+  const r = await chatCompletion({ provider: { baseUrl: 'http://x', chatPath: '/c' }, model: 'm', contents: [{ role: 'user', text: 'q' }] });
+  assert.equal(r.text, 'Jawaban penuh.');
+  assert.deepEqual(r.tokens, { prompt: 5, completion: 2, total: 7 });
+  assert.ok(!JSON.parse(calls[0].init.body).stream);
+});
+
 // ---------- registry ----------
 test('PROVIDERS: registry bawaan KOSONG (tanpa gemini hardcode)', () => {
   assert.deepEqual(PROVIDERS, {});
