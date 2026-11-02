@@ -393,26 +393,23 @@ function renderSessionList() {
     date.className = 'session-item__date';
     date.textContent = formatRelativeDate(s.updatedAt);
 
-    const del = document.createElement('button');
-    del.className = 'session-item__del';
-    del.type = 'button';
-    del.setAttribute('aria-label', `Hapus sesi: ${title.textContent}`);
-    del.innerHTML = TRASH_ICON;
-    del.addEventListener('click', (e) => {
-      e.stopPropagation();
-      deleteSession(s.id);
-    });
+    // Judul + tanggal dalam satu grup kiri (tak tumpang tindih dengan menu).
+    const main = document.createElement('div');
+    main.className = 'session-item__main';
+    main.append(title, date);
 
-    // Ekspor menyatu di bar sesi (aktif atau tidak). Hilang bila sesi kosong.
-    const exp = document.createElement('button');
-    exp.className = 'session-item__export';
-    exp.type = 'button';
-    exp.setAttribute('aria-label', `Ekspor sesi: ${title.textContent}`);
-    exp.innerHTML = EXPORT_ICON;
-    exp.hidden = !(s.messages || []).length;
-    exp.addEventListener('click', (e) => {
+    // Tombol titik-tiga: buka dropdown opsi sesi (Esport / Hapus).
+    const menuBtn = document.createElement('button');
+    menuBtn.className = 'session-item__menu';
+    menuBtn.type = 'button';
+    menuBtn.setAttribute('aria-label', 'Opsi sesi');
+    menuBtn.setAttribute('aria-haspopup', 'true');
+    menuBtn.setAttribute('aria-expanded', 'false');
+    menuBtn.innerHTML = MENU_ICON;
+    menuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      exportSession(s);
+      if (activeMenu && activeMenu.btn === menuBtn) closeSessionMenu();
+      else openSessionMenu(s, menuBtn);
     });
 
     const open = () => loadSession(s.id);
@@ -424,9 +421,79 @@ function renderSessionList() {
       }
     });
 
-    item.append(title, date, del, exp);
+    item.append(main, menuBtn);
     dom.sessionList.appendChild(item);
   }
+}
+
+// ===== RIWAYAT: MENU TITIK-TIGA (Esport / Hapus) =====
+// Dropdown diposisikan `fixed` dari tombol agar tak terpotong overflow sidebar.
+let activeMenu = null; // { panel, btn, onDoc, onEsc } yang sedang terbuka
+
+function closeSessionMenu() {
+  if (!activeMenu) return;
+  const { panel, btn, onDoc, onEsc } = activeMenu;
+  panel.remove();
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+  if (onDoc) document.removeEventListener('mousedown', onDoc);
+  if (onEsc) document.removeEventListener('keydown', onEsc);
+  activeMenu = null;
+}
+
+function makeMenuAction(icon, label, onClick, danger = false) {
+  const a = document.createElement('button');
+  a.className = 'session-item__action' + (danger ? ' --danger' : '');
+  a.type = 'button';
+  a.setAttribute('role', 'menuitem');
+  const iconEl = document.createElement('span');
+  iconEl.className = 'session-item__action__icon';
+  iconEl.setAttribute('aria-hidden', 'true');
+  iconEl.innerHTML = icon;
+  const labelEl = document.createElement('span');
+  labelEl.className = 'session-item__action__label';
+  labelEl.textContent = label;
+  a.append(iconEl, labelEl);
+  a.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeSessionMenu();
+    onClick();
+  });
+  return a;
+}
+
+function openSessionMenu(session, menuBtn) {
+  closeSessionMenu();
+  const panel = document.createElement('div');
+  panel.className = 'session-item__dropdown';
+  panel.setAttribute('role', 'menu');
+  // Tenggelam di bawah tombol, rata tepi kanan sidebar.
+  const rect = menuBtn.getBoundingClientRect();
+  panel.style.top = `${Math.round(rect.bottom) + 4}px`;
+  panel.style.right = `${Math.round(window.innerWidth - rect.right) + 8}px`;
+  panel.style.left = 'auto';
+
+  // Esport hanya bila sesi punya pesan; Hapus selalu tersedia.
+  if ((session.messages || []).length) {
+    panel.appendChild(
+      makeMenuAction(EXPORT_ICON, 'Esport riwayat', () => exportSession(session))
+    );
+  }
+  panel.appendChild(makeMenuAction(TRASH_ICON, 'Hapus sesi', () => deleteSession(session.id), true));
+
+  document.body.appendChild(panel);
+  requestAnimationFrame(() => panel.classList.add('is-open'));
+
+  const onDoc = (e) => {
+    if (!panel.contains(e.target) && e.target !== menuBtn && !menuBtn.contains(e.target)) {
+      closeSessionMenu();
+    }
+  };
+  const onEsc = (e) => {
+    if (e.key === 'Escape') closeSessionMenu();
+  };
+  document.addEventListener('mousedown', onDoc);
+  document.addEventListener('keydown', onEsc);
+  activeMenu = { panel, btn: menuBtn, onDoc, onEsc };
 }
 
 // ===== RIWAYAT: HAPUS SATU SESI =====
@@ -1557,6 +1624,8 @@ const TRASH_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14ZM10 11v6M14 11v6"/></svg>';
 const X_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>';
+const MENU_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>';
 const EXPORT_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>';
 

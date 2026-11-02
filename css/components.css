@@ -1054,15 +1054,23 @@
 .session-item {
   position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: flex-start;
+  gap: var(--space-2);
   width: 100%;
   text-align: left;
-  padding: var(--space-2) 44px var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-3);
   background: transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background var(--transition);
+}
+
+.session-item__main {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .session-item:hover,
@@ -1079,6 +1087,7 @@
   font-size: var(--text-secondary);
   font-weight: 500;
   color: var(--color-text);
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1089,13 +1098,11 @@
   color: var(--color-text-faint);
 }
 
-.session-item__del {
-  position: absolute;
-  top: 50%;
-  right: 4px;
-  transform: translateY(-50%);
-  width: 28px;
-  height: 28px;
+/* Tombol titik-tiga (⋮) di ujung kanan bar sesi. */
+.session-item__menu {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 32px;
   display: grid;
   place-items: center;
   border: none;
@@ -1108,58 +1115,102 @@
     color var(--transition);
 }
 
-.session-item:hover .session-item__del,
-.session-item:focus-within .session-item__del {
+.session-item:hover .session-item__menu,
+.session-item:focus-within .session-item__menu {
   opacity: 1;
 }
 
-.session-item__del:hover {
-  background: var(--color-error-soft);
+.session-item__menu svg {
+  width: 18px;
+  height: 18px;
+}
+
+.session-item__menu:hover,
+.session-item__menu:focus-visible {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  outline: none;
+}
+
+/* Dropdown mengambang (fixed) agar tak terpotong overflow sidebar. */
+.session-item__dropdown {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: var(--space-1);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-modal);
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity var(--transition), transform var(--transition);
+  z-index: 90;
+}
+
+.session-item__dropdown.is-open {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.session-item__action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-2);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  font: inherit;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.session-item__action:hover,
+.session-item__action:focus-visible {
+  background: var(--color-surface-2);
+  outline: none;
+}
+
+.session-item__action--danger {
   color: var(--color-error);
 }
 
-.session-item__del svg {
-  width: 14px;
-  height: 14px;
+.session-item__action--danger:hover {
+  background: var(--color-error-soft);
 }
 
-.session-item__export {
-  position: absolute;
-  top: 50%;
-  right: 36px;
-  transform: translateY(-50%);
-  width: 28px;
-  height: 28px;
+.session-item__action__icon {
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border: none;
-  background: transparent;
-  border-radius: var(--radius-sm);
+  width: 18px;
+  height: 18px;
   color: var(--color-text-secondary);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity var(--transition), background var(--transition),
-    color var(--transition);
 }
 
-.session-item:hover .session-item__export,
-.session-item:focus-within .session-item__export {
-  opacity: 1;
+.session-item__action--danger .session-item__action__icon {
+  color: var(--color-error);
 }
 
-/* Ekspor selalu tampil di sesi aktif (menyatu di bar yang sedang dibuka). */
-.session-item.is-active .session-item__export {
-  opacity: 1;
+.session-item__action__icon svg {
+  width: 16px;
+  height: 16px;
 }
 
-.session-item__export:hover {
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
-}
-
-.session-item__export svg {
-  width: 15px;
-  height: 15px;
+.session-item__action__label {
+  flex: 1 1 auto;
+  font-size: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ===== UTIL ===== */
@@ -1297,10 +1348,9 @@ input, textarea, select,
   .app-header__tagline { display: none; }
 }
 
-/* Tombol hapus sesi terlihat di layar sentuh */
+/* Tombol titik-tiga selalu tampil di layar sentuh (tanpa hover) */
 @media (hover: none) {
-  .session-item__del,
-  .session-item__export {
+  .session-item__menu {
     opacity: 1;
   }
 }
