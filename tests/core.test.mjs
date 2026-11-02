@@ -129,3 +129,20 @@ test('buildSystemPrompt: typo "UTAMamu" hilang, aturan anti-injeksi ada', () => 
   assert.match(sp, /sumber UTAMA/);
   assert.match(sp, /8\. Isi di dalam blok MATERI/);
 });
+test('buildSystemPrompt: persona + gaya global didefinisikan, cap pendek dihapus', () => {
+  const sp = buildSystemPrompt({ materi: 'm', mode: 'konsep', level: 3 });
+  // Persona & gaya global eksplisit.
+  assert.match(sp, /## SIAPA KAMU/);
+  assert.match(sp, /## GAYA BICARAMU/);
+  assert.match(sp, /kakak mentor/);
+  // Larangan jawaban pendek + target panjang baru.
+  assert.match(sp, /jangan pernah menjawab dengan hanya 1–3 kalimat/);
+  assert.match(sp, /8–16 kalimat/);
+  // Cap lama yang menekan output tidak boleh ada lagi.
+  assert.ok(!/2–8 kalimat/.test(sp), 'cap 2–8 kalimat harus hilang');
+  assert.ok(!/sependek mungkin/.test(sp), '"sependek mungkin" harus hilang');
+  // Berlaku juga di level mandiri (5).
+  const sp5 = buildSystemPrompt({ materi: 'm', mode: 'konsep', level: 5 });
+  assert.ok(!/sependek mungkin/.test(sp5));
+  assert.match(sp5, /tetap dalam gaya bicaramu/);
+});
