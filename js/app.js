@@ -7,6 +7,7 @@ import { estimateCost, formatCostIDR, fetchUsdIdr, effectiveUsdIdr, cachedUsdIdr
 import { storage } from './storage.js';
 import { resolveProviders, listModels, providerChat, probeEndpoint, fetchContextLimit, fetchModelPricing } from './providers.js';
 import { needsSummarize, splitForSummary, summarySystemPrompt, summaryMessage, buildContentsFrom } from './summarize.js';
+import { selectRelevantParagraphs } from './rag.js';
 import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
 import { extractPdfText } from './pdf.js';
 import { extractDocxText } from './docx.js';
@@ -707,7 +708,7 @@ async function sendUserMessage(rawText, opts = {}) {
       apiKey: activeApiKey(),
       model: state.settings.model,
       systemPrompt: buildSystemPrompt({
-        materi: buildMateri(),
+        materi: buildMateriFor(text),
         mode: state.settings.mode,
         level: state.settings.level,
         webSearch: state.settings.webSearch,
@@ -1012,6 +1013,17 @@ function buildMateri() {
     .map((t) => t.trim())
     .filter(Boolean);
   return parts.join('\n\n');
+}
+
+// Versi RAG: untuk pertanyaan tertentu, ambil hanya paragraf paling relevan
+// dari seluruh materi (bukan isi penuh). Materi tipis / tanpa query tetap
+// dikirim utuh. Hasil dipakai sebagai `materi:` di systemPrompt agar model
+// fokus pada potongan yang tepat — hemat konteks & biaya.
+function buildMateriFor(query) {
+  const full = buildMateri();
+  if (!full || !query) return full; // tanpa query -> seluruh materi (pembukaan)
+  const selected = selectRelevantParagraphs(full, query, 6);
+  return selected || full; // fallback: bila tak ada paragraf relevan
 }
 
 function renderMateriFiles() {
