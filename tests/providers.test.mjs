@@ -1,7 +1,7 @@
 // tests/providers.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PROVIDERS, listModels, resolveProviders, chatCompletion } from '../js/providers.js';
+import { PROVIDERS, listModels, resolveProviders, chatCompletion, probeEndpoint, providerChat } from '../js/providers.js';
 import { extractSources } from '../js/api.js';
 
 function stubFetch(responder) {
@@ -11,90 +11,104 @@ function stubFetch(responder) {
 }
 const okRes = (json) => ({ ok: true, status: 200, json: async () => json });
 
-test('PROVIDERS.gemini: path adapter OpenAI + header x-goog-api-key', () => {
-  assert.equal(PROVIDERS.gemini.baseUrl, 'https://generativelanguage.googleapis.com/v1beta');
-  assert.equal(PROVIDERS.gemini.modelsPath, '/openai/models');
-  assert.equal(PROVIDERS.gemini.chatPath, '/openai/chat/completions');
-  assert.equal(PROVIDERS.gemini.authHeader, 'x-goog-api-key');
-  assert.equal(PROVIDERS.gemini.supportsGrounding, true);
-  assert.equal(PROVIDERS.gemini.supportsThinking, true);
+// ---------- registry ----------
+test('PROVIDERS: registry bawaan KOSONG (tanpa gemini hardcode)', () => {
+  assert.deepEqual(PROVIDERS, {});
+  assert.deepEqual(resolveProviders(), {});
 });
 
-test('listModels: GET ke modelsPath + header auth + filter chat-capable', async () => {
+test('resolveProviders: gabung custom by id + flag custom', () => {
+  const custom = [{ id: 'local', name: 'LM Studio', baseUrl: 'http://127.0.0.1:1234', modelsPath: '/models', chatPath: '/chat/completions' }];
+  const all = resolveProviders(custom);
+  assert.equal(all.local.name, 'LM Studio');
+  assert.equal(all.local.custom, true);
+  assert.equal(resolveProviders([{ id: 'x' }]).x, undefined); // tanpa baseUrl → ditolak
+});
+
+// ---------- probeEndpoint ----------
+test('probeEndpoint: /models hidup → simpan path itu (kunci opsional → tanpa header)', async () => {
+  const calls = stubFetch(() => okRes({ data: [] }));
+  const r = await probeEndpoint('http://127.0.0.1:1234/');
+  assert.deepEqual(r, { modelsPath: '/models', chatPath: '/chat/completions' });
+  assert.equal(calls[0].url, 'http://127.0.0.1:1234/models');
+  assert.deepEqual(calls[0].init.headers, {}); // tanpa kunci → tanpa header auth
+});
+
+test('probeEndpoint: fallback /v1/models saat /models gagal + Bearer bila berkunci', async () => {
+  let n = 0;
+  const calls = stubFetch(() => {
+    n += 1;
+    if (n === 1) return { ok: false, status: 404, json: async () => ({}) };
+    return okRes({ data: [] });
+  });
+  const r = await probeEndpoint('http://127.0.0.1:1234', 'K');
+  assert.deepEqual(r, { modelsPath: '/v1/models', chatPath: '/v1/chat/completions' });
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer K');
+});
+
+test('probeEndpoint: offline → error network; gagal keduanya → error ramah', async () => {
+  stubFetch(() => { throw new Error('offline'); });
+  await assert.rejects(() => probeEndpoint('http://127.0.0.1:1234'), (e) => e.type === 'network');
+  let n = 0;
+  stubFetch(() => { n += 1; return { ok: false, status: 404, json: async () => ({}) }; });
+  await assert.rejects(() => probeEndpoint('http://x'), (e) => typeof e.message === 'string');
+  await assert.rejects(() => probeEndpoint(''), (e) => e.type === 'badrequest');
+});
+
+// ---------- listModels ----------
+const LOCAL = { id: 'local', name: 'LM Studio', baseUrl: 'http://127.0.0.1:1234', modelsPath: '/models', chatPath: '/chat/completions' };
+
+test('listModels: GET ke modelsPath + filter chat-capable + dedup', async () => {
   const calls = stubFetch(() => okRes({ data: [
     { id: 'gpt-4o', owned_by: 'openai' },                       // tanpa capabilities → ikut
-    { id: 'gpt-4o', capabilities: ['chat/completions'] },        // eksplisit chat → ikut (duplikat di-dedup)
+    { id: 'gpt-4o', capabilities: ['chat/completions'] },        // eksplisit chat → ikut (dedup)
     { id: 'text-embedding-003', owned_by: 'openai', capabilities: ['embedding'] }, // embedding saja → buang
     { id: 'qwen-max' },                                          // tanpa fields → ikut
   ] }));
-  const ids = await listModels('K', PROVIDERS.gemini);
+  const ids = await listModels('K', LOCAL);
   assert.deepEqual(ids, ['gpt-4o', 'qwen-max']);
-  assert.equal(calls[0].url, `${PROVIDERS.gemini.baseUrl}${PROVIDERS.gemini.modelsPath}`);
-  assert.equal(calls[0].init.headers['x-goog-api-key'], 'K');
+  assert.equal(calls[0].url, 'http://127.0.0.1:1234/models');
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer K');
 });
 
-test('listModels: offline → lempar error ramah (network)', async () => {
+test('listModels: tanpa kunci → tanpa header auth; offline → network', async () => {
+  const calls = stubFetch(() => okRes({ data: [{ id: 'm' }] }));
+  await listModels('', LOCAL);
+  assert.deepEqual(calls[0].init.headers, {});
   stubFetch(() => { throw new Error('offline'); });
-  await assert.rejects(() => listModels('K', PROVIDERS.gemini), (e) => e.type === 'network');
+  await assert.rejects(() => listModels('', LOCAL), (e) => e.type === 'network');
 });
 
-test('resolveProviders: gabung default + custom', () => {
-  const custom = [{ id: 'local', name: 'Ollama', baseUrl: 'http://localhost:11434/v1' }];
-  const all = resolveProviders(custom);
-  assert.equal(all.gemini.id, 'gemini');
-  assert.equal(all.local.baseUrl, 'http://localhost:11434/v1');
-});
-
-// tests/providers.test.mjs — chatCompletion (OpenAI path) + ekstraksi sumber + graceful degradation
-test('chatCompletion: POST format OpenAI + parse content & usage', async () => {
+// ---------- chatCompletion ----------
+test('chatCompletion: POST format [OI] + parse content & usage', async () => {
   const calls = stubFetch(() => okRes({
     choices: [{ message: { role: 'assistant', content: ' Halo dunia ' } }],
     usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
   }));
   const r = await chatCompletion({
-    provider: PROVIDERS.gemini, apiKey: 'K', model: 'gemini-3.8-flash',
+    provider: LOCAL, apiKey: 'K', model: 'qwen-max',
     systemPrompt: 'sys', contents: [{ role: 'user', text: 'hi' }],
   });
   assert.equal(r.text, 'Halo dunia');                       // content di-trim
   assert.deepEqual(r.tokens, { prompt: 12, completion: 8, total: 20 });
   const body = JSON.parse(calls[0].init.body);
-  assert.equal(body.model, 'gemini-3.8-flash');
+  assert.equal(body.model, 'qwen-max');
   assert.deepEqual(body.messages, [
     { role: 'system', content: 'sys' },
     { role: 'user', content: 'hi' },
   ]);
-  assert.ok(calls[0].init.headers['x-goog-api-key'] === 'K');
+  assert.ok(calls[0].init.headers.Authorization === 'Bearer K');
 });
 
-test('chatCompletion: grounding → tools bila didukung, fallback tanpa tools', async () => {
-  // Percobaan 1: tools diterima.
-  let n = 0;
-  globalThis.fetch = async (url, init) => {
-    n += 1;
-    const body = JSON.parse(init.body);
-    if (n === 1 && body.tools) return okRes({ choices: [{ message: { content: 'ok' } }], usage: { total_tokens: 5 } });
-    if (n === 2 && !body.tools) return okRes({ choices: [{ message: { content: 'ok' } }], usage: { total_tokens: 5 } });
-    return okRes({ choices: [{ message: { content: 'ok' } }], usage: { total_tokens: 5 } });
-  };
-  const r = await chatCompletion({
-    provider: PROVIDERS.gemini, apiKey: 'K', model: 'gemini-3.8-flash',
-    systemPrompt: 's', contents: [{ role: 'user', text: 'x' }], grounding: true,
-  });
-  assert.equal(r.text, 'ok');
+test('chatCompletion: kunci kosong → tanpa header; supportsThinking hanya bila provider mendukung', async () => {
+  const calls = stubFetch(() => okRes({ choices: [{ message: { content: 'ok' } }], usage: {} }));
+  await chatCompletion({ provider: LOCAL, apiKey: '', model: 'm', systemPrompt: 's', contents: [{ role: 'user', text: 'x' }], thinkingLevel: 'low' });
+  assert.deepEqual(calls[0].init.headers, { 'Content-Type': 'application/json' }); // tanpa Authorization
+  const body = JSON.parse(calls[0].init.body);
+  assert.equal(body.generationConfig, undefined); // supportsThinking false
 });
 
-test('chatCompletion: sources dari groundingMetadata (Gemini)', async () => {
-  globalThis.fetch = async () => okRes({
-    choices: [{ message: { content: 'jawaban' } }],
-    candidates: [{ groundingMetadata: { groundingChunks: [{ web: { uri: 'https://a.id', title: 'A' } }] } }],
-  });
-  const r = await chatCompletion({ provider: PROVIDERS.gemini, apiKey: 'K', model: 'm', systemPrompt: 's', contents: [{ role: 'user', text: 'x' }] });
-  assert.equal(r.sources.length, 1);
-  assert.equal(r.sources[0].url, 'https://a.id');
-});
-
-// TAMBAHAN (bonus coverage): fallback-tools BENAR-BENAR diuji — tools ditolak (400), retry tanpa tools sukses.
-test('chatCompletion: graceful degradation → retry tanpa tools saat 400', async () => {
+test('chatCompletion: grounding → tools bila didukung; graceful degradation 400 → retry tanpa tools', async () => {
   let n = 0;
   globalThis.fetch = async (url, init) => {
     n += 1;
@@ -103,10 +117,36 @@ test('chatCompletion: graceful degradation → retry tanpa tools saat 400', asyn
     if (n === 2 && !body.tools) return okRes({ choices: [{ message: { content: 'tanpa-tools' } }], usage: { total_tokens: 3 } });
     return okRes({ choices: [{ message: { content: 'x' } }], usage: { total_tokens: 1 } });
   };
+  const supp = { ...LOCAL, supportsGrounding: true };
   const r = await chatCompletion({
-    provider: PROVIDERS.gemini, apiKey: 'K', model: 'm', systemPrompt: 's',
+    provider: supp, apiKey: 'K', model: 'm', systemPrompt: 's',
     contents: [{ role: 'user', text: 'x' }], grounding: true,
   });
   assert.equal(r.text, 'tanpa-tools');   // retry tanpa tools menghasilkan jawaban
   assert.equal(n, 2);                    // benar-benar 2 panggilan (tools → tanpa tools)
+});
+
+test('chatCompletion: sources dari groundingMetadata bila ada', async () => {
+  globalThis.fetch = async () => okRes({
+    choices: [{ message: { content: 'jawaban' } }],
+    candidates: [{ groundingMetadata: { groundingChunks: [{ web: { uri: 'https://a.id', title: 'A' } }] } }],
+  });
+  const r = await chatCompletion({ provider: LOCAL, apiKey: 'K', model: 'm', systemPrompt: 's', contents: [{ role: 'user', text: 'x' }] });
+  assert.equal(r.sources.length, 1);
+  assert.equal(r.sources[0].url, 'https://a.id');
+});
+
+test('chatCompletion & providerChat: tanpa provider → error ramah (tanpa fallback diam)', async () => {
+  stubFetch(() => okRes({ choices: [{ message: { content: 'x' } }] }));
+  await assert.rejects(() => chatCompletion({ model: 'm' }), (e) => e.type === 'badrequest');
+  await assert.rejects(() => providerChat('tidak-ada', { customProviders: [], model: 'm' }), (e) => e.type === 'badrequest');
+  // provider dikenal → jalan
+  const r = await providerChat('local', { customProviders: [LOCAL], apiKey: '', model: 'm', systemPrompt: 's', contents: [{ role: 'user', text: 'x' }] });
+  assert.equal(r.text, 'x');
+});
+
+// ---------- extractSources (tetap dipakai provider.js) ----------
+test('extractSources: kosong aman', () => {
+  assert.deepEqual(extractSources(undefined), []);
+  assert.deepEqual(extractSources({}), []);
 });

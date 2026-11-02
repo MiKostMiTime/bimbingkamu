@@ -5,21 +5,6 @@
 // ===== NAMA & IDENTITAS =====
 export const APP_NAME = 'TanyaBukan';
 
-// ===== API GEMINI =====
-export const API = {
-  baseUrl: 'https://generativelanguage.googleapis.com/v1beta/models',
-  // SATU-SATUNYA sumber daftar model (dropdown dibangun dari sini, lihat
-  // buildModelOptions di app.js). Model 2.5/2.0/1.5 sudah/akan dimatikan Google.
-  // Pilihan aktual disegarkan dari API setelah kunci dipakai (fetchAvailableModels).
-  defaultModel: 'gemini-3.8-flash',
-  models: [
-    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash (paling cerdas)' },
-    { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash (seimbang)' },
-    { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite (hemat kuota)' },
-  ],
-  aistudioUrl: 'https://aistudio.google.com/app/apikey',
-};
-
 // ===== MODE BELAJAR =====
 export const MODES = [
   { id: 'konsep', label: 'Paham Konsep' },
@@ -67,4 +52,19 @@ export function getModeLabel(modeId) {
 // Cari label level dari nilai slider.
 export function getLevelLabel(level) {
   return LEVELS.labels[level] || LEVELS.labels[3];
+}
+
+// ===== MIGRASI SETTINGS LAMA =====
+// Data sebelum refactor menyimpan provider 'gemini' + model gemini-*.
+// Registry kini mulai kosong (semua endpoint ditambahkan user), jadi
+// jejak gemini dibersihkan agar onboarding endpoint muncul lagi.
+// Riwayat sesi TIDAK disentuh. Murni fungsi — mudah diuji.
+export function migrateLegacyProviderSettings(settings = {}) {
+  const next = { ...settings };
+  if (next.provider === 'gemini') next.provider = '';
+  if (typeof next.model === 'string' && /^gemini-/i.test(next.model)) next.model = '';
+  if (Array.isArray(next.providers)) {
+    next.providers = next.providers.filter((p) => p && p.id !== 'gemini');
+  }
+  return next;
 }

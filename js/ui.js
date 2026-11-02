@@ -155,8 +155,8 @@ export function showConfirm({ title, text, confirmLabel = 'Ya, lanjutkan', kind 
 // ===== ONBOARDING (3 LANGKAH) =====
 const ONBOARDING_STEPS = [
   {
-    title: 'Ambil kunci API',
-    text: 'Buka aistudio.google.com, buat kunci API Gemini, lalu tempel di Pengaturan (tombol gear di kanan atas). Kunci hanya tersimpan di browser ini. Periksa syarat penggunaan Google AI Studio (termasuk batas usia dan penggunaan data pada paket gratis); jika kamu di bawah 18 tahun, minta guru atau orang tua menyiapkan kunci.',
+    title: 'Hubungkan endpoint AI',
+    text: 'Masukkan Base URL endpoint [OI]-compatible (mis. http://127.0.0.1:1234 untuk LM Studio). Daftar model diambil otomatis dari endpoint — kunci API hanya perlu bila endpoint-mu butuh auth.',
   },
   {
     title: 'Isi materi belajarmu',
@@ -168,9 +168,10 @@ const ONBOARDING_STEPS = [
   },
 ];
 
-export function showOnboarding({ onComplete, onSkip }) {
+export function showOnboarding({ onComplete, onSkip, onConnect, onModel }) {
   const root = document.getElementById('modalRoot');
   let step = 0;
+  let connected = false; // step 0: endpoint terhubung + model terpilih?
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -199,17 +200,68 @@ export function showOnboarding({ onComplete, onSkip }) {
   }
   document.addEventListener('keydown', onKey);
 
+  // Langkah 0: form koneksi endpoint. onConnect({baseUrl, name, key}) →
+  // Promise<string[]> daftar id model; UI menampilkan select model.
+  function renderConnectForm() {
+    body.innerHTML = `
+      <div class="modal__header" style="margin-bottom:0">
+        <h2 class="modal__title">${ONBOARDING_STEPS[0].title}</h2>
+      </div>
+      <p class="modal__text" style="margin-top:12px">${ONBOARDING_STEPS[0].text}</p>
+      <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+        <input id="onboardUrl" class="input" type="text" placeholder="http://127.0.0.1:1234" autocomplete="off" spellcheck="false" />
+        <input id="onboardName" class="input" type="text" placeholder="Nama endpoint (opsional)" autocomplete="off" />
+        <input id="onboardKey" class="input" type="password" placeholder="Kunci API (opsional)" autocomplete="off" />
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="onboardConnect" class="btn btn--secondary btn--sm" type="button">Hubungkan &amp; ambil model</button>
+          <span id="onboardStatus" style="font-size:var(--text-caption);color:var(--color-text-secondary)"></span>
+        </div>
+        <div id="onboardModelWrap" style="display:none">
+          <label class="field__label" for="onboardModel" style="margin-top:4px;display:block">Pilih model</label>
+          <select id="onboardModel" class="select"></select>
+        </div>
+      </div>
+    `;
+    const btn = body.querySelector('#onboardConnect');
+    const status = body.querySelector('#onboardStatus');
+    btn.addEventListener('click', async () => {
+      const baseUrl = body.querySelector('#onboardUrl').value.trim();
+      const name = body.querySelector('#onboardName').value.trim();
+      const key = body.querySelector('#onboardKey').value.trim();
+      if (!baseUrl) { status.textContent = 'Masukkan URL endpoint dulu.'; return; }
+      btn.disabled = true;
+      status.textContent = 'Menghubungkan…';
+      try {
+        const models = await onConnect({ baseUrl, name, key });
+        if (!models.length) throw { message: 'Endpoint hidup tapi tidak punya model chat.' };
+        const wrap = body.querySelector('#onboardModelWrap');
+        const sel = body.querySelector('#onboardModel');
+        wrap.style.display = '';
+        sel.innerHTML = models.map((id) => `<option value="${id}">${id}</option>`).join('');
+        connected = true;
+        status.textContent = `Terhubung — ${models.length} model tersedia.`;
+      } catch (err) {
+        status.textContent = (err && err.message) || 'Gagal terhubung. Periksa URL/kunci.';
+        btn.disabled = false;
+      }
+    });
+  }
+
   function render() {
     const s = ONBOARDING_STEPS[step];
     progress.innerHTML = ONBOARDING_STEPS.map(
       (_, i) => `<span class="onboarding__dot${i === step ? ' is-active' : ''}"></span>`
     ).join('');
-    body.innerHTML = `
-      <div class="modal__header" style="margin-bottom:0">
-        <h2 class="modal__title">${s.title}</h2>
-      </div>
-      <p class="modal__text" style="margin-top:12px">${s.text}</p>
-    `;
+    if (step === 0 && onConnect) {
+      renderConnectForm();
+    } else {
+      body.innerHTML = `
+        <div class="modal__header" style="margin-bottom:0">
+          <h2 class="modal__title">${s.title}</h2>
+        </div>
+        <p class="modal__text" style="margin-top:12px">${s.text}</p>
+      `;
+    }
     bar.innerHTML = '';
 
     const skip = document.createElement('button');
@@ -233,6 +285,16 @@ export function showOnboarding({ onComplete, onSkip }) {
     next.className = 'btn btn--primary';
     next.textContent = step === ONBOARDING_STEPS.length - 1 ? 'Mulai Belajar' : 'Lanjut';
     next.addEventListener('click', () => {
+      if (step === 0 && onConnect && !connected) {
+        const st = body.querySelector('#onboardStatus');
+        if (st) st.textContent = 'Hubungkan endpoint & pilih model dulu, ya.';
+        return;
+      }
+      if (step === 0 && connected) {
+        // Simpan pilihan model dari onboarding → app.js lewat callback onModel.
+        const sel = body.querySelector('#onboardModel');
+        if (sel && onModel) onModel(sel.value);
+      }
       if (step === ONBOARDING_STEPS.length - 1) {
         close();
         if (onComplete) onComplete();

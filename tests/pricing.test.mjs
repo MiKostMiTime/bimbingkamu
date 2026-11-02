@@ -4,15 +4,16 @@ import assert from 'node:assert/strict';
 import { PRICES, findPrice, estimateCost, formatCost } from '../js/pricing.js';
 
 test('findPrice: model dikenal + prefix wildcard', () => {
-  assert.deepEqual(findPrice('gemini-3.8-flash'), { input: 0.5, output: 4 });
+  assert.deepEqual(findPrice('gpt-4o-mini'), { input: 0.15, output: 0.6 });
   assert.deepEqual(findPrice('qwen-max'), { input: 0, output: 0 }); // qwen-*
   assert.equal(findPrice('model-tidak-dikenal'), null);
+  assert.equal(findPrice(''), null);
 });
 
 test('estimateCost: token keluar × harga output', () => {
-  // gemini-3.8-flash output $4/1M → 1.000.000 completion = $4
-  assert.equal(estimateCost('gemini-3.8-flash', { completion: 1000000 }), 4);
-  assert.equal(estimateCost('gemini-3.8-flash', { prompt: 10, completion: 500 }), 0.002);
+  // gpt-4o output $10/1M → 1.000.000 completion = $10
+  assert.equal(estimateCost('gpt-4o', { completion: 1000000 }), 10);
+  assert.equal(estimateCost('gpt-4o-mini', { prompt: 10, completion: 500 }), 0.0003);
   // gratis → $0
   assert.equal(estimateCost('qwen-max', { completion: 9999 }), 0);
 });

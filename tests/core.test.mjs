@@ -2,13 +2,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { mapApiError, extractSources, callGemini, fetchAvailableModels } from '../js/api.js';
+import { mapApiError, extractSources } from '../js/api.js';
 import { deriveTitle, syncSession, migrateLegacy, createSession, trimSessions } from '../js/sessions.js';
 import { extractMath } from '../js/math.js';
 import { itemsToText } from '../js/pdf.js';
 import { formatDuration } from '../js/ui.js'; // ui.js hanya menyentuh DOM di dalam fungsi
 import { buildHintPrompt, buildSystemPrompt } from '../js/prompt.js';
-import { API } from '../js/config.js';
+import { migrateLegacyProviderSettings } from '../js/config.js';
 import * as config from '../js/config.js';
 
 // ---------- mapApiError ----------
@@ -53,72 +53,22 @@ test('extractSources: kosong aman', () => {
   assert.deepEqual(extractSources({}), []);
 });
 
-// ---------- callGemini: bentuk permintaan ----------
-function stubFetch(responder) {
-  const calls = [];
-  globalThis.fetch = async (url, init) => { calls.push({ url, init }); return responder(url, init); };
-  return calls;
-}
-const okRes = (json) => ({ ok: true, status: 200, json: async () => json });
-
-test('callGemini: kunci di header, tanpa temperature, tool google_search, thinkingLevel', async () => {
-  const calls = stubFetch(() => okRes({ candidates: [{ content: { parts: [{ text: ' Halo ' }] } }] }));
-  const r = await callGemini({
-    apiKey: 'KEY123', model: 'gemini-3.8-flash', systemPrompt: 'sys',
-    contents: [{ role: 'user', text: 'hi' }], thinkingLevel: 'medium', webSearch: true,
-  });
-  assert.equal(r.text, 'Halo');
-  const { url, init } = calls[0];
-  assert.ok(!url.includes('KEY123'), 'kunci tidak boleh ada di URL');
-  assert.equal(init.headers['x-goog-api-key'], 'KEY123');
-  const body = JSON.parse(init.body);
-  assert.equal(body.generationConfig.temperature, undefined);
-  assert.equal(body.generationConfig.maxOutputTokens, 8192);
-  assert.equal(body.generationConfig.thinkingConfig.thinkingLevel, 'medium');
-  assert.deepEqual(body.tools, [{ google_search: {} }]);
-});
-test('callGemini: Flash-Lite tidak dikirimi thinkingConfig; tanpa webSearch tanpa tools', async () => {
-  const calls = stubFetch(() => okRes({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }));
-  await callGemini({ apiKey: 'k', model: 'gemini-3.5-flash-lite', systemPrompt: 's', contents: [{ role: 'user', text: 'x' }] });
-  const body = JSON.parse(calls[0].init.body);
-  assert.equal(body.generationConfig.thinkingConfig, undefined);
-  assert.equal(body.tools, undefined);
-});
-test('callGemini: MAX_TOKENS tanpa teks -> error truncated', async () => {
-  stubFetch(() => okRes({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ text: '' }] } }] }));
-  await assert.rejects(
-    () => callGemini({ apiKey: 'k', model: 'gemini-3.8-flash', systemPrompt: 's', contents: [{ role: 'user', text: 'x' }] }),
-    (e) => e.type === 'truncated'
-  );
-});
-test('callGemini: HTTP 400 non-kunci -> badrequest', async () => {
-  stubFetch(() => ({ ok: false, status: 400, json: async () => ({ error: { message: 'input token count exceeds the maximum' } }) }));
-  await assert.rejects(
-    () => callGemini({ apiKey: 'k', model: 'gemini-3.8-flash', systemPrompt: 's', contents: [{ role: 'user', text: 'x' }] }),
-    (e) => e.type === 'badrequest'
-  );
-});
-
-// ---------- fetchAvailableModels ----------
-test('fetchAvailableModels: pageSize, header, filter generateContent', async () => {
-  const calls = stubFetch(() => okRes({ models: [
-    { name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent'] },
-    { name: 'models/gemini-3.5-flash-lite', supportedGenerationMethods: ['generateContent'] },
-    { name: 'models/gemini-3.6-flash', supportedGenerationMethods: ['embedContent'] },
-    { name: 'models/gemini-embedding-001', supportedGenerationMethods: ['embedContent'] },
-  ] }));
-  const ids = await fetchAvailableModels('K');
-  assert.deepEqual(ids, ['gemini-3.8-flash', 'gemini-3.5-flash-lite']);
-  assert.ok(calls[0].url.includes('pageSize=1000'));
-  assert.ok(!calls[0].url.includes('key='));
-  assert.equal(calls[0].init.headers['x-goog-api-key'], 'K');
-});
-
 // ---------- config ----------
-test('config: temperature dihapus, daftar model = 3 ID yang diverifikasi', () => {
+test('config: LEVEL_TEMPERATURE tidak ada; migrasi settings gemini direset', () => {
   assert.equal(config.LEVEL_TEMPERATURE, undefined);
-  assert.deepEqual(API.models.map((m) => m.id), ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite']);
-  assert.ok(API.models.some((m) => m.id === API.defaultModel));
+  const legacy = {
+    mode: 'latihan', level: 4, provider: 'gemini', model: 'gemini-3.8-flash',
+    webSearch: false, providers: [{ id: 'gemini', baseUrl: 'x' }, { id: 'lokal', baseUrl: 'http://127.0.0.1:1234' }],
+  };
+  const out = migrateLegacyProviderSettings(legacy);
+  assert.equal(out.provider, '');
+  assert.equal(out.model, '');
+  assert.deepEqual(out.providers, [{ id: 'lokal', baseUrl: 'http://127.0.0.1:1234' }]);
+  assert.equal(out.mode, 'latihan');   // setelan lain utuh
+  assert.equal(out.webSearch, false);
+  // Settings baru tanpa jejak gemini tidak berubah.
+  const fresh = { provider: 'ep-abc', model: 'qwen-max', providers: [] };
+  assert.deepEqual(migrateLegacyProviderSettings(fresh), fresh);
 });
 
 // ---------- sessions ----------

@@ -2,11 +2,10 @@
 // TanyaBukan — APP
 // Entry point: inisialisasi modul, state sesi, event binding.
 // =========================================================
-import { API, STORAGE_KEYS, getLevelLabel } from './config.js';
+import { STORAGE_KEYS, getLevelLabel, migrateLegacyProviderSettings } from './config.js';
 import { estimateCost, formatCost } from './pricing.js';
 import { storage } from './storage.js';
-// import { callGemini } from './api.js';   // DIPINDAHKAN → providerChat dari providers.js
-import { resolveProviders, listModels, providerChat } from './providers.js';
+import { resolveProviders, listModels, providerChat, probeEndpoint } from './providers.js';
 import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
 import { extractPdfText } from './pdf.js';
 import { extractDocxText } from './docx.js';
@@ -76,8 +75,10 @@ const dom = {
   model: $('modelSelect'),
   providerSelect: $('providerSelect'),
   customBaseUrl: $('customBaseUrl'),
-  customAuthHeader: $('customAuthHeader'),
+  customProviderName: $('customProviderName'),
+  customProviderKey: $('customProviderKey'),
   addCustomProvider: $('addCustomProvider'),
+  connStatus: $('headerConnStatus'),
   webSearchToggle: $('webSearchToggle'),
   timer: $('timerValue'),
   turns: $('turnValue'),
@@ -91,12 +92,20 @@ const dom = {
 };
 
 // ===== STATE =====
-const DEFAULT_SETTINGS = { mode: 'konsep', level: 3, model: API.defaultModel, webSearch: true, provider: 'gemini', providers: [] };
+// TIDAK ada provider/model bawaan — keduanya wajib dipilih dari endpoint
+// yang dihubungkan user (onboarding / drawer Pengaturan).
+const DEFAULT_SETTINGS = { mode: 'konsep', level: 3, model: '', webSearch: true, provider: '', providers: [] };
+
+// Bersihkan jejak data lama (provider 'gemini', model gemini-*) agar
+// onboarding endpoint muncul lagi. Riwayat chat tidak disentuh.
+function loadSettings() {
+  return migrateLegacyProviderSettings({ ...DEFAULT_SETTINGS, ...storage.get(STORAGE_KEYS.settings, {}) });
+}
 
 const state = {
-  apiKey: storage.get(STORAGE_KEYS.apiKey, ''),
+  apiKey: storage.get(STORAGE_KEYS.apiKey, ''), // kunci umum (fallback bila endpoint tak punya kunci sendiri)
   materiFiles: [], // file sesi AKTIF { name, chars, text } — per chat, bukan global
-  settings: { ...DEFAULT_SETTINGS, ...storage.get(STORAGE_KEYS.settings, {}) },
+  settings: loadSettings(),
   sessions: [], // riwayat: [{ id, title, createdAt, updatedAt, startedAt, messages }]
   activeId: null, // id sesi yang sedang dibuka
   messages: [], // { role: 'user'|'model'|'system'|'error', text, hidden? }
@@ -120,11 +129,9 @@ function logApiError(err) {
 }
 
 // ===== DAFTAR MODEL (REFRESH OTOMATIS) =====
-// Setelah kunci dimasukkan atau provider dipilih, tanyakan model apa yang
-// bisa dipakai endpoint+kunci itu, lalu segarkan selector model. Menjamin
-// model yang sudah dinonaktifkan tidak lagi ditawarkan. Gagal diam — daftar
-// statis di index.html tetap berlaku. Mengikuti provider yang TERPILIH, bukan
-// hanya Gemini (F2: dropdown harus mengikuti provider terpilih).
+// Setelah endpoint dipilih/ditambahkan, tanyakan model apa yang bisa
+// dipakai endpoint itu (SELALU dari endpoint, bukan daftar hardcode),
+// lalu segarkan selector model di header chat.
 let modelRefreshTimer = null;
 
 function scheduleModelRefresh() {
@@ -135,58 +142,104 @@ function scheduleModelRefresh() {
   }, 800);
 }
 
-// Registry provider = default (Gemini) + custom dari settings.providers.
+// Registry provider = endpoint terdaftar user (tanpa bawaan).
 function currentProviders() { return resolveProviders(state.settings.providers || []); }
 
-// Isi dropdown model (#modelSelect) berdasarkan provider yang TERPILIH.
-// Dipanggil saat load, ganti provider, dan ganti kunci → F2: dropdown selalu
-// mengikuti provider terpilih, bukan hanya Gemini.
+// Kunci aktif: kunci khusus endpoint → fallback kunci umum. Boleh kosong
+// (endpoint lokal tanpa auth → request tanpa header Authorization).
+function activeApiKey() {
+  const p = currentProviders()[state.settings.provider];
+  return (p && p.key) || state.apiKey || '';
+}
+
+// Guard gabungan: endpoint + model harus terpilih sebelum chat.
+function hasActiveChatTarget() {
+  return Boolean(state.settings.provider && state.settings.model);
+}
+
+function focusChatTarget() {
+  if (!state.settings.provider) dom.providerSelect.focus();
+  else dom.model.focus();
+}
+
+// Indikator status koneksi di header chat.
+function updateConnStatus(stateOverride) {
+  if (!dom.connStatus) return;
+  const s = stateOverride || (state.settings.provider ? 'ok' : 'idle');
+  dom.connStatus.classList.remove('is-ok', 'is-error');
+  if (s === 'ok') { dom.connStatus.textContent = '● terhubung'; dom.connStatus.classList.add('is-ok'); }
+  else if (s === 'error') { dom.connStatus.textContent = '● gagal'; dom.connStatus.classList.add('is-error'); }
+  else dom.connStatus.textContent = '● belum ada endpoint';
+}
+
+// Isi dropdown model (#modelSelect) berdasarkan endpoint TERPILIH.
+// Dipanggil saat load, ganti endpoint, dan setelah hubungkan endpoint.
 async function refreshProviderModelList() {
-  if (!state.apiKey) return;
-  const providers = currentProviders();
-  const providerId = state.settings.provider || 'gemini';
-  const provider = providers[providerId];
+  updateConnStatus(state.settings.provider ? 'ok' : 'idle');
+  if (!state.settings.provider) return;
+  const provider = currentProviders()[state.settings.provider];
   if (!provider) return;
   try {
-    const ids = await listModels(state.apiKey, provider);
-    if (!ids.length) return; // gagal → biarkan daftar statis
-    // Id hanya huruf/angka/titik/tirai (disaring regex di providers.js) → aman
+    const ids = await listModels(activeApiKey(), provider);
+    if (!ids.length) {
+      updateConnStatus('error');
+      return; // kosong → biarkan pilihan lama
+    }
+    // Id hanya huruf/angka/titik/tiret (disaring regex di providers.js) → aman
     // untuk disisipkan ke <option>.
     dom.model.innerHTML = ids.map((id) => `<option value="${id}">${id}</option>`).join('');
     dom.model.value = ids.includes(state.settings.model) ? state.settings.model : ids[0];
     state.settings.model = dom.model.value;
     persistSettings();
+    updateConnStatus('ok');
   } catch (err) {
-    console.warn('[TanyaBukan] gagal memuang daftar model provider:', err && err.message);
+    updateConnStatus('error');
+    console.warn('[TanyaBukan] gagal memuat daftar model endpoint:', err && err.message);
   }
 }
 
-// Isi selector provider (#providerSelect) dari registry + tandai yang terpilih.
+// Isi selector endpoint (#providerSelect di header) dari registry +
+// tandai yang terpilih. Registry kosong → placeholder.
 function renderProviderOptions() {
   const providers = currentProviders();
+  if (!Object.keys(providers).length) {
+    dom.providerSelect.innerHTML = '<option value="">Belum ada endpoint</option>';
+    return;
+  }
   dom.providerSelect.innerHTML = Object.values(providers)
     .map((p) => `<option value="${p.id}" ${p.id === state.settings.provider ? 'selected' : ''}>${p.name}</option>`)
     .join('');
 }
 
-// Tambahkan endpoint custom OpenAI-compatible ke registry + pilih otomatis.
-function addCustomProvider() {
-  const baseUrl = dom.customBaseUrl.value.trim();
-  if (!baseUrl) { showToast('Masukkan URL endpoint dulu, ya.', 'info'); return; }
-  const id = 'custom-' + Math.random().toString(36).slice(2, 7);
+// Hubungkan endpoint baru: probe /models vs /v1/models → simpan provider
+// (dengan path terverifikasi + kunci opsional) → pilih otomatis → ambil
+// daftar model. Return daftar id model (dipakai onboarding). Throw error
+// ramah bila endpoint tak merespons.
+async function connectEndpoint({ baseUrl, name, key }) {
+  const { modelsPath, chatPath } = await probeEndpoint(baseUrl, key);
+  const host = baseUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  const id = 'ep-' + Math.random().toString(36).slice(2, 7);
   const provider = {
-    id, name: baseUrl, baseUrl,
-    authHeader: dom.customAuthHeader.value.trim() || 'Authorization',
-    supportsGrounding: false, supportsThinking: false, custom: true,
+    id,
+    name: name || host || baseUrl,
+    baseUrl: baseUrl.trim().replace(/\/+$/, ''),
+    modelsPath,
+    chatPath,
+    key: key || '',
+    supportsGrounding: false,
+    supportsThinking: false,
+    custom: true,
   };
   state.settings.providers = [...(state.settings.providers || []), provider];
   state.settings.provider = id;
   persistSettings();
   renderProviderOptions();
-  refreshProviderModelList();
+  await refreshProviderModelList();
   dom.customBaseUrl.value = '';
-  dom.customAuthHeader.value = '';
-  showToast(`Endpoint "${baseUrl}" ditambahkan.`, 'success');
+  dom.customProviderName.value = '';
+  dom.customProviderKey.value = '';
+  showToast(`Endpoint "${provider.name}" terhubung.`, 'success');
+  return listModels(activeApiKey(), provider);
 }
 
 // ===== BANTUAN SESI =====
@@ -230,19 +283,12 @@ function consecutiveHints() {
   return n;
 }
 
-// Dropdown model dibangun dari config.js (sumber tunggal), bukan hardcode di HTML.
-function buildModelOptions() {
-  dom.model.innerHTML = API.models
-    .map((m) => `<option value="${m.id}">${m.label}</option>`)
-    .join('');
-}
-
 // Empty state dengan checklist persiapan (kunci API + materi).
 function showEmptyState() {
   renderEmptyState(dom.messages, {
     onStart: startFreshSession,
     onOpenSettings: openSettingsPanel,
-    status: { keyReady: Boolean(state.apiKey), materiReady: Boolean(buildMateri()) },
+    status: { keyReady: hasActiveChatTarget(), materiReady: Boolean(buildMateri()) },
   });
 }
 
@@ -501,6 +547,7 @@ function newChat() {
 }
 
 async function generateGreeting() {
+  if (!hasActiveChatTarget()) return; // belum ada endpoint/model → jangan kirim
   state.busy = true;
   updateComposer();
   const typing = showTyping(dom.messages);
@@ -509,7 +556,7 @@ async function generateGreeting() {
     const opening = { role: 'user', text: buildOpeningPrompt(), hidden: true };
     // providerChat mengembalikan { text, tokens, sources } — ambil .text (bukan objeknya).
     const { text: replyText, tokens, sources } = await providerChat(state.settings.provider, {
-      apiKey: state.apiKey,
+      apiKey: activeApiKey(),
       model: state.settings.model,
       systemPrompt: buildSystemPrompt({
         materi: buildMateri(),
@@ -565,9 +612,9 @@ async function sendUserMessage(rawText, opts = {}) {
   const text = (fromInput ? dom.input.value : rawText).trim();
   if (!text || state.busy) return;
 
-  if (!state.apiKey) {
-    showToast('Masukkan kunci API dulu, ya.', 'error');
-    openSettingsAndFocus(dom.apiKey);
+  if (!hasActiveChatTarget()) {
+    showToast('Pilih endpoint & model dulu, ya.', 'info');
+    focusChatTarget();
     return;
   }
   if (!buildMateri()) {
@@ -604,7 +651,7 @@ async function sendUserMessage(rawText, opts = {}) {
   let answered = false;
   try {
     const { text: reply, tokens, sources } = await providerChat(state.settings.provider, {
-      apiKey: state.apiKey,
+      apiKey: activeApiKey(),
       model: state.settings.model,
       systemPrompt: buildSystemPrompt({
         materi: buildMateri(),
@@ -691,7 +738,7 @@ function rerenderModelMessage(idx) {
 // Regenerasi balasan model terakhir via planRedo → providerChat → rebuild bubble.
 async function regenerateLast() {
   if (state.busy) { showToast('Tunggu balasan tutor selesai dulu, ya.', 'info'); return; }
-  if (!state.apiKey) { showToast('Masukkan kunci API dulu, ya.', 'error'); openSettingsAndFocus(dom.apiKey); return; }
+  if (!hasActiveChatTarget()) { showToast('Pilih endpoint & model dulu, ya.', 'info'); focusChatTarget(); return; }
   if (!buildMateri()) { showToast('Lampirkan file materi dulu.', 'error'); openSettingsAndFocus(dom.materiDrop); return; }
 
   const plan = applyRedo(state.messages, planRedo(state.messages));
@@ -704,7 +751,7 @@ async function regenerateLast() {
 
   try {
     const { text: reply, tokens, sources } = await providerChat(state.settings.provider, {
-      apiKey: state.apiKey,
+      apiKey: activeApiKey(),
       model: state.settings.model,
       systemPrompt: buildSystemPrompt({
         materi: buildMateri(),
@@ -777,7 +824,7 @@ async function regenerateFrom(editIdx) {
     for (const reg of regs) {
       // providerChat → { text, tokens, sources } (path OpenAI-generic). Tangkap token tiap iterasi edit-regen.
       const { text: reply, tokens, sources } = await providerChat(state.settings.provider, {
-        apiKey: state.apiKey, model: state.settings.model, systemPrompt: systemPrompt(),
+        apiKey: activeApiKey(), model: state.settings.model, systemPrompt: systemPrompt(),
         contents: reg.contents, thinkingLevel: thinkingLevelFor(),
         grounding: state.settings.webSearch, customProviders: state.settings.providers || [],
       });
@@ -842,7 +889,6 @@ function autosizeInput() {
 
 // ===== HIDRASI UI DARI STATE =====
 function hydrateSettings() {
-  buildModelOptions();
   renderProviderOptions();
   dom.apiKey.value = state.apiKey;
   updateMateriCount();
@@ -853,16 +899,12 @@ function hydrateSettings() {
   dom.level.value = String(state.settings.level);
   updateLevelLabel();
   dom.webSearchToggle.checked = state.settings.webSearch !== false;
-  // Model yang tersimpan mungkin sudah dinonaktifkan Google (mis.
-  // gemini-2.0-flash kini mati) → sinkronkan ke opsi yang masih ada.
+  // Model tersimpan mungkin tak ada lagi di endpoint → biarkan kosong;
+  // daftar model disegarkan dari endpoint via refreshProviderModelList().
   const hasSavedModel = [...dom.model.options].some(
     (o) => o.value === state.settings.model
   );
-  dom.model.value = hasSavedModel ? state.settings.model : dom.model.options[0].value;
-  if (state.settings.model !== dom.model.value) {
-    state.settings.model = dom.model.value;
-    persistSettings();
-  }
+  if (hasSavedModel) dom.model.value = state.settings.model;
 }
 
 function updateMateriCount() {
@@ -1129,7 +1171,13 @@ function bindEvents() {
     renderProviderOptions();
     refreshProviderModelList();
   });
-  dom.addCustomProvider.addEventListener('click', addCustomProvider);
+  dom.addCustomProvider.addEventListener('click', () => {
+    connectEndpoint({
+      baseUrl: dom.customBaseUrl.value,
+      name: dom.customProviderName.value.trim(),
+      key: dom.customProviderKey.value.trim(),
+    }).catch((err) => showToast((err && err.message) || 'Gagal menghubungkan endpoint.', 'error'));
+  });
 
   dom.apiKeyToggle.addEventListener('click', () => {
     const show = dom.apiKey.type === 'password';
@@ -1344,12 +1392,20 @@ function init() {
   startActiveTimer();
   bindEvents();
 
-  // Kunci tersimpan dari sesi lalu → segarkan daftar model sesuai provider terpilih.
-  if (state.apiKey) refreshProviderModelList();
+  // Endpoint tersimpan dari sesi lalu → segarkan daftar model dari endpoint itu.
+  if (state.settings.provider) refreshProviderModelList();
+  else updateConnStatus('idle');
   hydrateSidebar();
 
   if (!storage.get(STORAGE_KEYS.onboardingDone, false)) {
     showOnboarding({
+      onConnect: connectEndpoint,
+      onModel: (modelId) => {
+        if (!modelId) return;
+        state.settings.model = modelId;
+        persistSettings();
+        hydrateSettings();
+      },
       onSkip: () => storage.set(STORAGE_KEYS.onboardingDone, true),
       onComplete: () => {
         storage.set(STORAGE_KEYS.onboardingDone, true);

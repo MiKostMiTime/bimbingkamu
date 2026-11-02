@@ -433,8 +433,11 @@ export function addCostFooter(col, tokens, cost) {
   const foot = document.createElement('div');
   foot.className = 'msg__footer';
   const parts = [];
-  if (tokens && typeof tokens.completion === 'number') {
-    parts.push(`${tokens.completion.toLocaleString('id-ID')} token`);
+  // Format arah: ↑ token masuk (prompt), ↓ token keluar (completion).
+  if (tokens && typeof tokens.prompt === 'number' && typeof tokens.completion === 'number') {
+    parts.push(`↑ ${tokens.prompt.toLocaleString('id-ID')} · ↓ ${tokens.completion.toLocaleString('id-ID')} token`);
+  } else if (tokens && typeof tokens.completion === 'number') {
+    parts.push(`↓ ${tokens.completion.toLocaleString('id-ID')} token`);
   }
   if (typeof cost === 'number') parts.push(`~${formatCost(cost)}`);
   if (!parts.length) return null;
@@ -461,7 +464,7 @@ export function renderEmptyState(root, { onStart, onOpenSettings, status } = {})
     `${label}<span class="sr-only">${done ? ' (sudah)' : ' (belum)'}</span></li>`;
   const checklist = status
     ? `<ul class="empty-state__checklist" aria-label="Persiapan">
-         ${item(status.keyReady, 'Kunci API')}
+         ${item(status.keyReady, 'Endpoint & model')}
          ${item(status.materiReady, 'File materi')}
        </ul>`
     : '';
@@ -469,7 +472,7 @@ export function renderEmptyState(root, { onStart, onOpenSettings, status } = {})
     <div class="empty-state__icon" aria-hidden="true">${EMPTY_ICON}</div>
     <h2 class="empty-state__title">Mulai belajar dengan TanyaBukan</h2>
     <p class="empty-state__text">
-      Siapkan dua hal di Pengaturan: kunci API dan file materi. Setelah itu tanya
+      Siapkan dua hal: sambungkan endpoint AI (header di atas) dan lampirkan file materi. Setelah itu tanya
       apa saja — tutor akan menjelaskan materimu, mengecek pemahamanmu, dan
       membimbingmu sampai paham.
     </p>

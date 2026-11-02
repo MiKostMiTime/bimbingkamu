@@ -446,6 +446,30 @@
   min-width: 0;
 }
 
+/* Selector endpoint + model di header chat */
+.chat-header__provider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.chat-header__provider .select--sm {
+  max-width: 220px;
+  font-size: var(--text-caption);
+  padding: 4px 24px 4px 8px;
+}
+
+.conn-status {
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.conn-status.is-ok { color: var(--color-success, #16a34a); }
+.conn-status.is-error { color: var(--color-danger, #dc2626); }
+
 .stat {
   display: inline-flex;
   align-items: center;

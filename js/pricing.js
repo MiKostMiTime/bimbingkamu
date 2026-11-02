@@ -1,9 +1,6 @@
 // js/pricing.js
 // Tabel harga indikatif per 1M token (USD). Fokus: token keluar (completion).
 export const PRICES = {
-  'gemini-3.8-flash': { input: 0.5, output: 4 },
-  'gemini-3.6-flash': { input: 0.3, output: 2.5 },
-  'gemini-3.5-flash-lite': { input: 0.1, output: 0.4 },
   'gpt-4o-mini': { input: 0.15, output: 0.6 },
   'gpt-4o': { input: 2.5, output: 10 },
   'deepseek-v3': { input: 0.27, output: 1.1 },

@@ -93,6 +93,13 @@
       <!-- ===== AREA UTAMA: CHAT ===== -->
       <main class="chat-area">
         <header class="chat-header">
+          <div class="chat-header__provider">
+            <select id="providerSelect" class="select select--sm" aria-label="Endpoint" title="Endpoint"></select>
+            <select id="modelSelect" class="select select--sm" aria-label="Model AI" title="Model AI">
+              <option value="">Pilih model…</option>
+            </select>
+            <span id="headerConnStatus" class="conn-status" title="Status endpoint">● Belum ada endpoint</span>
+          </div>
           <div class="chat-header__stats">
             <span class="stat">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -174,13 +181,13 @@
           <h2 class="panel__title" id="panel-key-title">Kunci API</h2>
         </div>
         <div class="field">
-          <label class="field__label" for="apiKeyInput">Kunci API Google</label>
+          <label class="field__label" for="apiKeyInput">Kunci API umum (opsional)</label>
           <div class="input-wrap">
             <input
               id="apiKeyInput"
               class="input"
               type="password"
-              placeholder="Tempel kunci API Gemini"
+              placeholder="Kunci untuk endpoint yang butuh auth"
               autocomplete="off"
               spellcheck="false"
             />
@@ -197,11 +204,7 @@
             </button>
           </div>
           <p class="field__hint">
-            Kunci hanya tersimpan di browser ini, tidak dikirim ke server mana pun.
-            <br />Belum punya?
-            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener"
-              >Dapatkan gratis di aistudio.google.com</a
-            >
+            Kunci hanya tersimpan di browser ini, tidak dikirim ke server mana pun. Endpoint lokal biasanya tidak butuh kunci.
           </p>
           <button id="deleteAllBtn" class="btn btn--danger btn--sm" type="button">
             Hapus semua data
@@ -212,19 +215,19 @@
       <!-- PROVIDER -->
       <section class="panel" aria-labelledby="panel-provider-title">
         <div class="panel__header">
-          <h2 class="panel__title" id="panel-provider-title">Provider</h2>
+          <h2 class="panel__title" id="panel-provider-title">Endpoint</h2>
         </div>
         <div class="field">
-          <label class="field__label" for="providerSelect">Model Provider</label>
-          <select id="providerSelect" class="select"></select>
-          <p class="field__hint">Daftar model menyesuaikan endpoint &amp; kunci yang dipakai. Gemini tetap default.</p>
+          <label class="field__label">Endpoint terdaftar</label>
+          <p class="field__hint">Endpoint &amp; model dipilih di header chat (di atas area percakapan). Tambah endpoint lewat form di bawah — daftar model otomatis diambil dari endpoint (dicoba /models lalu /v1/models).</p>
         </div>
         <div class="field">
-          <label class="field__label" for="customBaseUrl">Endpoint Custom (OpenAI-compatible)</label>
-          <input id="customBaseUrl" class="input" type="text" placeholder="https://api.groq.com/openai/v1" autocomplete="off" spellcheck="false" />
-          <input id="customAuthHeader" class="input" type="text" placeholder="Header auth (opsional, mis. Bearer)" autocomplete="off" spellcheck="false" style="margin-top:var(--space-2)" />
-          <button id="addCustomProvider" class="btn btn--ghost btn--sm" type="button" style="margin-top:var(--space-2)">Tambah endpoint</button>
-          <p class="field__hint">Grounding &amp; penalaran hanya aktif di provider yang mendukung (default Gemini).</p>
+          <label class="field__label" for="customBaseUrl">Tambah endpoint ([OI]-compatible)</label>
+          <input id="customBaseUrl" class="input" type="text" placeholder="http://127.0.0.1:1234" autocomplete="off" spellcheck="false" />
+          <input id="customProviderName" class="input" type="text" placeholder="Nama endpoint (opsional)" autocomplete="off" style="margin-top:var(--space-2)" />
+          <input id="customProviderKey" class="input" type="password" placeholder="Kunci API (opsional)" autocomplete="off" style="margin-top:var(--space-2)" />
+          <button id="addCustomProvider" class="btn btn--ghost btn--sm" type="button" style="margin-top:var(--space-2)">Hubungkan endpoint</button>
+          <p class="field__hint">Kunci kosong = tanpa header auth (endpoint lokal seperti LM Studio).</p>
         </div>
       </section>
 
@@ -326,10 +329,6 @@
             <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span>
           </div>
           <p class="field__hint" id="levelDesc">Seimbang</p>
-        </div>
-        <div class="field">
-          <label class="field__label" for="modelSelect">Model AI</label>
-          <select id="modelSelect" class="select"></select>
         </div>
       </section>
     </aside>

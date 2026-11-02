@@ -1,28 +1,19 @@
 // =========================================================
 // TanyaBukan — REGISTRY PROVIDER + listModels
-// Registry provider OpenAI-compatible: daftar model otomatis
-// menyesuaikan endpoint. Murni modul (tanpa DOM); error dari
-// fetch dipeta ke mapApiError agar ramah pemakai.
+// Registry provider [OI]-compatible: TANPA provider bawaan.
+// Semua endpoint ditambahkan user (mis. http://127.0.0.1:1234);
+// daftar model SELALU diambil dari endpoint itu sendiri, sehingga
+// tidak ada model hardcode yang bisa menimbulkan error.
+// Murni modul (tanpa DOM); error dari fetch dipeta ke mapApiError.
 // =========================================================
 import { mapApiError, extractSources } from './api.js';
 
-// Provider default: Gemini lewat adapter OpenAI (/openai/models,
-// /openai/chat/completions) dengan header x-goog-api-key.
-export const PROVIDERS = {
-  gemini: {
-    id: 'gemini',
-    name: 'Gemini (default)',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    modelsPath: '/openai/models',
-    chatPath: '/openai/chat/completions',
-    authHeader: 'x-goog-api-key',
-    supportsGrounding: true,
-    supportsThinking: true,
-  },
-};
+// Registry bawaan KOSONG — provider hanya ada bila user menambahkannya
+// via probeEndpoint (onboarding / drawer Pengaturan).
+export const PROVIDERS = {};
 
-// Registry = default + custom (array dari settings.providers).
-// Custom hanya dimasukkan bila punya id + baseUrl; diberi flag custom.
+// Registry = custom dari settings.providers. Custom hanya dimasukkan
+// bila punya id + baseUrl; diberi flag custom.
 export function resolveProviders(custom = []) {
   const all = { ...PROVIDERS };
   for (const p of custom) {
@@ -31,19 +22,55 @@ export function resolveProviders(custom = []) {
   return all;
 }
 
-// Header otentikasi: header khusus provider (mis. x-goog-api-key)
-// atau Bearer default untuk endpoint custom.
-function authHeader(provider, apiKey) {
-  if (provider.authHeader === 'x-goog-api-key') return { [provider.authHeader]: apiKey };
+// Header otentikasi: kunci kosong → TANPA header auth (endpoint lokal
+// seperti LM Studio/Ollama tidak butuh). Kunci terisi → Bearer.
+function authHeader(apiKey) {
+  if (!apiKey) return {};
   return { Authorization: `Bearer ${apiKey}` };
+}
+
+// ===== PROBE ENDPOINT (baru) =====
+// Verifikasi Base URL saat ditambahkan: coba GET {base}/models lalu
+// {base}/v1/models — simpan path yang hidup supaya chat nanti tidak
+// menebak-nebak. Return { modelsPath, chatPath }; gagal keduanya → throw
+// error ramah. Header auth hanya dikirim bila kunci diisi.
+export async function probeEndpoint(baseUrl, apiKey = '') {
+  const base = String(baseUrl || '').trim().replace(/\/+$/, '');
+  if (!base) {
+    throw { type: 'badrequest', message: 'Masukkan URL endpoint dulu, ya.' };
+  }
+  const candidates = ['/models', '/v1/models'];
+  let lastErr = null;
+  for (const modelsPath of candidates) {
+    let res;
+    try {
+      res = await fetch(`${base}${modelsPath}`, { headers: authHeader(apiKey) });
+    } catch {
+      lastErr = { type: 'network', message: 'Tidak bisa terhubung ke endpoint. Periksa URL & koneksi.' };
+      continue; // coba kandidat berikutnya
+    }
+    if (res.ok) {
+      // chatPath disimpulkan dari modelsPath yang hidup.
+      const chatPath = modelsPath.replace(/\/models$/, '/chat/completions');
+      return { modelsPath, chatPath };
+    }
+    lastErr = { ...mapApiError(res.status, '') };
+  }
+  throw lastErr || {
+    type: 'badrequest',
+    message: 'Endpoint tidak merespons /models maupun /v1/models. Periksa URL-nya.',
+  };
 }
 
 // Ambil daftar ID model chat-capable dari endpoint provider.
 // GET ${baseUrl}${modelsPath} → filter model yang bisa chat, dedup per id.
-export async function listModels(apiKey, provider = PROVIDERS.gemini) {
+export async function listModels(apiKey, provider) {
+  if (!provider || !provider.baseUrl) {
+    throw { type: 'badrequest', message: 'Endpoint belum terdaftar. Tambahkan endpoint dulu.' };
+  }
   let res;
   try {
-    res = await fetch(`${provider.baseUrl}${provider.modelsPath}`, { headers: authHeader(provider, apiKey) });
+    res = await fetch(`${provider.baseUrl}${provider.modelsPath}`, { headers: authHeader(apiKey) });
   } catch {
     // fetch melempar saat offline / jaringan terputus → error network.
     throw { ...mapApiError(0) };
@@ -70,22 +97,24 @@ export async function listModels(apiKey, provider = PROVIDERS.gemini) {
 }
 
 // ===== CHAT COMPLETION (PATH OPENAI) =====
-// Panggil endpoint OpenAI-shaped provider (default: Gemini adapter).
 // POST ${baseUrl}${chatPath} body { model, messages, max_tokens, tools?, generationConfig? }.
 // Parameter: { provider, apiKey, model, systemPrompt, contents, maxTokens, thinkingLevel, grounding }
 // `contents` = array { role: 'user'|'model', text } (riwayat penuh).
 // Mengembalikan Promise<{ text, tokens:{prompt,completion,total}, sources }>.
 export async function chatCompletion({
-  provider = PROVIDERS.gemini, apiKey, model, systemPrompt, contents,
+  provider, apiKey, model, systemPrompt, contents,
   maxTokens = 8192, thinkingLevel, grounding,
 }) {
+  if (!provider || !provider.baseUrl) {
+    throw { type: 'badrequest', message: 'Pilih endpoint & model dulu, ya.' };
+  }
   const messages = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
   for (const m of contents || []) messages.push({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text });
 
   const body = { model, messages, max_tokens: maxTokens };
   if (provider.supportsThinking && thinkingLevel) {
-    body.generationConfig = { thinkingLevel }; // Gemini adapter; provider lain abaikan
+    body.generationConfig = { thinkingLevel }; // hanya provider yang mendukung
   }
 
   let res;
@@ -105,7 +134,7 @@ export async function chatCompletion({
     if ((res.status === 400 || res.status === 422) && body.tools && !withoutTools.tools) {
       try {
         res = await fetch(`${provider.baseUrl}${provider.chatPath}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(provider, apiKey) },
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(apiKey) },
           body: JSON.stringify(withoutTools),
         });
       } catch { throw { ...mapApiError(0) }; }
@@ -123,7 +152,7 @@ export async function chatCompletion({
     total: usage.total_tokens ?? undefined,
   };
   let sources = [];
-  if (data.candidates) sources = extractSources(data.candidates[0]); // Gemini: sumber dari groundingMetadata
+  if (data.candidates) sources = extractSources(data.candidates[0]); // sumber grounding bila ada
   return { text: text.trim(), tokens, sources };
 }
 
@@ -132,13 +161,18 @@ async function buildChatRequest(provider, apiKey, body, grounding) {
   if (grounding && provider.supportsGrounding) body.tools = [{ type: 'function', function: { name: 'google_search', description: 'web grounding' } }];
   return fetch(`${provider.baseUrl}${provider.chatPath}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeader(provider, apiKey) },
+    headers: { 'Content-Type': 'application/json', ...authHeader(apiKey) },
     body: JSON.stringify(body),
   });
 }
 
-// Convenience untuk app.js: providerChat('gemini', params) → chatCompletion.
+// Convenience untuk app.js: providerChat(id, params) → chatCompletion.
+// Provider tidak dikenal → throw (TANPA fallback diam-diam).
 export async function providerChat(providerName, params = {}) {
   const providers = resolveProviders(params.customProviders || []);
-  return chatCompletion({ provider: providers[providerName] || PROVIDERS.gemini, ...params });
+  const provider = providers[providerName];
+  if (!provider) {
+    throw { type: 'badrequest', message: 'Endpoint tidak dikenal. Pilih endpoint dulu di header chat.' };
+  }
+  return chatCompletion({ provider, ...params });
 }
