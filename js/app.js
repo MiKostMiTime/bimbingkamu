@@ -403,6 +403,18 @@ function renderSessionList() {
       deleteSession(s.id);
     });
 
+    // Ekspor menyatu di bar sesi (aktif atau tidak). Hilang bila sesi kosong.
+    const exp = document.createElement('button');
+    exp.className = 'session-item__export';
+    exp.type = 'button';
+    exp.setAttribute('aria-label', `Ekspor sesi: ${title.textContent}`);
+    exp.innerHTML = EXPORT_ICON;
+    exp.hidden = !(s.messages || []).length;
+    exp.addEventListener('click', (e) => {
+      e.stopPropagation();
+      exportSession(s);
+    });
+
     const open = () => loadSession(s.id);
     item.addEventListener('click', open);
     item.addEventListener('keydown', (e) => {
@@ -412,7 +424,7 @@ function renderSessionList() {
       }
     });
 
-    item.append(title, date, del);
+    item.append(title, date, del, exp);
     dom.sessionList.appendChild(item);
   }
 }
@@ -1183,7 +1195,6 @@ function startRateRefresh() {
 // ===== STATISTIK & STATUS UI =====
 function updateStats() {
   setDialogCount(dom.turns, turnCount());
-  dom.exportBtn.disabled = !state.messages.length;
   renderTokenStat();
 }
 
@@ -1455,7 +1466,9 @@ function bindEvents() {
     }
   });
   dom.send.addEventListener('click', () => sendUserMessage());
-  dom.exportBtn.addEventListener('click', exportCurrent);
+  // Ekspor kini menyatu di bar riwayat (renderSessionList). Tombol header lama
+  // dihapus; jaga-kompatibilitas bila #exportBtn muncul lagi.
+  if (dom.exportBtn) dom.exportBtn.addEventListener('click', exportCurrent);
 
   // Riwayat: toggle sidebar (HP = drawer, layar lebar = ratakan)
   dom.historyToggle.addEventListener('click', () => {
@@ -1503,21 +1516,36 @@ function persistSettings() {
 }
 
 // ===== EKSPOR SAAT INI =====
-function exportCurrent() {
-  if (!state.messages.length) return;
+function currentSessionRecord() {
+  return state.sessions.find((s) => s.id === state.activeId);
+}
+
+// Ekspor sesi (aktif atau spesifik). Mengirim meta + pesan yang tersimpan.
+// Tanpa pesan -> tidak melakukan apa-apa. Dipanggil tombol ekspor di bar riwayat.
+function exportSession(session) {
+  const target = session || currentSessionRecord();
+  if (!target || !(target.messages || []).length) return;
+  const isCurrent = !session;
+  const messages = isCurrent ? state.messages : target.messages;
   exportConversation({
     meta: {
-      materi: buildMateri(),
+      materi: isCurrent
+        ? buildMateri()
+        : (target.files || []).map((f) => f.text).join('\n\n'),
       mode: state.settings.mode,
       level: state.settings.level,
-      duration: formatDuration(state.activeMs),
-      turns: turnCount(),
-      hints: state.messages.filter((m) => m.kind === 'hint').length,
+      duration: isCurrent ? formatDuration(state.activeMs) : '',
+      turns: isCurrent ? turnCount() : messages.length,
+      hints: messages.filter((m) => m.kind === 'hint').length,
       model: state.settings.model,
       webSearch: state.settings.webSearch,
     },
-    messages: state.messages,
+    messages,
   });
+}
+
+function exportCurrent() {
+  exportSession();
 }
 
 // ===== IKON =====
@@ -1529,6 +1557,8 @@ const TRASH_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14ZM10 11v6M14 11v6"/></svg>';
 const X_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>';
+const EXPORT_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>';
 
 // ===== TIMER WAKTU AKTIF =====
 // Hanya bertambah bila ada pesan, tab terlihat, dan ada aktivitas dalam 60 dtk
@@ -1592,6 +1622,7 @@ init();
 
 // ===== HUKUM UJIAN (test hook) — ekspos alur agar bisa dipanggil dari Node.
 // generateGreeting / sendUserMessage = titik masuk alur kirim model; state =
-// objek sesi yang dipakai seluruh modul. Hanya tambahan export, tidak mengubah
-// perilaku aplikasi di browser.
-export { generateGreeting, sendUserMessage, state };
+// objek sesi yang dipakai seluruh modul. renderSessionList / exportSession =
+// ekspos UI riwayat + ekspor untuk uji integrasi. Hanya tambahan export, tidak
+// mengubah aplikasi di browser.
+export { generateGreeting, sendUserMessage, state, renderSessionList, exportSession };

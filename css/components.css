@@ -1058,7 +1058,7 @@
   gap: 2px;
   width: 100%;
   text-align: left;
-  padding: var(--space-2) 36px var(--space-2) var(--space-3);
+  padding: var(--space-2) 44px var(--space-2) var(--space-3);
   background: transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -1121,6 +1121,45 @@
 .session-item__del svg {
   width: 14px;
   height: 14px;
+}
+
+.session-item__export {
+  position: absolute;
+  top: 50%;
+  right: 36px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition), background var(--transition),
+    color var(--transition);
+}
+
+.session-item:hover .session-item__export,
+.session-item:focus-within .session-item__export {
+  opacity: 1;
+}
+
+/* Ekspor selalu tampil di sesi aktif (menyatu di bar yang sedang dibuka). */
+.session-item.is-active .session-item__export {
+  opacity: 1;
+}
+
+.session-item__export:hover {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.session-item__export svg {
+  width: 15px;
+  height: 15px;
 }
 
 /* ===== UTIL ===== */
@@ -1259,7 +1298,12 @@ input, textarea, select,
 }
 
 /* Tombol hapus sesi terlihat di layar sentuh */
-@media (hover: none) { .session-item__del { opacity: 1; } }
+@media (hover: none) {
+  .session-item__del,
+  .session-item__export {
+    opacity: 1;
+  }
+}
 
 /* Hormati preferensi kurangi animasi */
 @media (prefers-reduced-motion: reduce) {
