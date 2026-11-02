@@ -3,7 +3,7 @@
 // Entry point: inisialisasi modul, state sesi, event binding.
 // =========================================================
 import { STORAGE_KEYS, getLevelLabel, migrateLegacyProviderSettings } from './config.js';
-import { estimateCost, formatCostIDR, fetchUsdIdr, effectiveUsdIdr } from './pricing.js';
+import { estimateCost, formatCostIDR, fetchUsdIdr, effectiveUsdIdr, cachedUsdIdr } from './pricing.js';
 import { storage } from './storage.js';
 import { resolveProviders, listModels, providerChat, probeEndpoint, fetchContextLimit, fetchModelPricing } from './providers.js';
 import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
@@ -1075,9 +1075,43 @@ function renderTokenStat() {
   }
   if (state.pricing) {
     title += ` Harga: ${state.pricing.source === 'local' ? 'lokal/gratis' : state.pricing.source === 'manual' ? 'diisi manual' : 'dari endpoint'}`;
-    if (rate) title += `; kurs Rp${rate.toLocaleString('id-ID')}/USD.`;
+    if (rate) {
+      title += `; kurs Rp${rate.toLocaleString('id-ID')}/USD`;
+      if (state.settings.usdIdrManual) title += ' (manual)';
+      else {
+        const c = cachedUsdIdr();
+        if (c) {
+          const menit = Math.round(c.ageMs / 60000);
+          title += menit < 1 ? ' (baru saja diperbarui)' : ` (${menit} mnt lalu${c.stale ? ', usang — cari internet untuk perbarui' : ''})`;
+        }
+      }
+      title += '.';
+    }
   }
   dom.tokenTotal.title = title;
+}
+
+// ===== KURS DINAMIS (refresh berkala) =====
+// Estimasi biaya harus konsisten antar pengguna → kurs live dari internet,
+// disegarkan tiap 60 detik & saat tab kembali aktif (hemat kuota API).
+// Offline/gagal → pakai cache terakhir (ditandai usang di tooltip).
+const RATE_REFRESH_MS = 60 * 1000;
+
+function refreshRate() {
+  if (state.settings.usdIdrManual) return; // manual user menang — tanpa internet pun tetap konsisten
+  fetchUsdIdr().then((r) => {
+    if (r) { state.usdIdr = r; renderTokenStat(); }
+  });
+}
+
+function startRateRefresh() {
+  state.usdIdr = effectiveUsdIdr(state.settings.usdIdrManual);
+  refreshRate();
+  if (startRateRefresh._timer) clearInterval(startRateRefresh._timer);
+  startRateRefresh._timer = setInterval(refreshRate, RATE_REFRESH_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshRate();
+  });
 }
 
 // ===== STATISTIK & STATUS UI =====
@@ -1467,6 +1501,7 @@ function init() {
   // Endpoint tersimpan dari sesi lalu → segarkan daftar model dari endpoint itu.
   if (state.settings.provider) refreshProviderModelList();
   else updateConnStatus('idle');
+  startRateRefresh(); // kurs live berkala (butuh internet; offline → cache)
   hydrateSidebar();
 
   if (!storage.get(STORAGE_KEYS.onboardingDone, false)) {

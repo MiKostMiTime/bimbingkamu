@@ -10,12 +10,12 @@
 const RATE_CACHE_KEY = 'tanyabukan.usdIdr';
 const RATE_TTL = 24 * 60 * 60 * 1000; // 24 jam
 
-// Ambil kurs dari cache; null bila tidak ada / kedaluwarsa.
+// Ambil kurs dari cache + umurnya (ms). Return { rate, ageMs } atau null.
 export function cachedUsdIdr(now = Date.now()) {
   try {
     const raw = JSON.parse(localStorage.getItem(RATE_CACHE_KEY) || 'null');
-    if (raw && typeof raw.rate === 'number' && raw.rate > 0 && now - raw.at < RATE_TTL) {
-      return raw.rate;
+    if (raw && typeof raw.rate === 'number' && raw.rate > 0 && typeof raw.at === 'number') {
+      return { rate: raw.rate, ageMs: Math.max(0, now - raw.at), stale: now - raw.at >= RATE_TTL };
     }
   } catch {}
   return null;
@@ -42,11 +42,13 @@ export async function fetchUsdIdr() {
   return null;
 }
 
-// Kurs efektif: override manual user → cache → null (tak bisa hitung).
+// Kurs efektif: override manual user → cache (termasuk cache basi sebagai
+// fallback terakhir) → null (tak bisa hitung).
 export function effectiveUsdIdr(manualRate) {
   const m = Number(manualRate);
   if (Number.isFinite(m) && m > 0) return m;
-  return cachedUsdIdr();
+  const c = cachedUsdIdr();
+  return c ? c.rate : null;
 }
 
 // ===== ESTIMASI BIAYA =====

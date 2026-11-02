@@ -27,14 +27,19 @@ test('estimateCost: harga dari sumber dinamis (bukan tabel bawaan)', () => {
 
 test('kurs: cache + TTL + override manual menang', () => {
   const now = Date.now();
-  assert.equal(cachedUsdIdr(now), null);        // belum ada cache
+  assert.equal(cachedUsdIdr(now), null);          // belum ada cache
   cacheUsdIdr(16300, now);
-  assert.equal(cachedUsdIdr(now), 16300);       // dari cache
-  assert.equal(cachedUsdIdr(now + 25 * 3600e3), null); // kedaluwarsa >24 jam
+  let c = cachedUsdIdr(now);
+  assert.equal(c.rate, 16300);                    // dari cache
+  assert.equal(c.stale, false);                   // segar
+  c = cachedUsdIdr(now + 25 * 3600e3);
+  assert.equal(c.stale, true);                    // >24 jam → usang (masih dipakai sebagai fallback)
   // override manual user selalu menang atas cache
   assert.equal(effectiveUsdIdr('15000'), 15000);
-  assert.equal(effectiveUsdIdr(''), 16300);     // kosong → cache
-  cacheUsdIdr(16300, now - 25 * 3600e3);        // cache basi + tanpa manual → null
+  assert.equal(effectiveUsdIdr(''), 16300);       // kosong → cache segar
+  assert.equal(effectiveUsdIdr(''), 16300);       // cache usang → tetap fallback terakhir
+  // tanpa cache sama sekali & tanpa manual → null (butuh internet / isi manual)
+  localStorage.removeItem('tanyabukan.usdIdr');
   assert.equal(effectiveUsdIdr(''), null);
 });
 
