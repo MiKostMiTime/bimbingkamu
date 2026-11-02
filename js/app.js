@@ -6,6 +6,7 @@ import { STORAGE_KEYS, getLevelLabel, migrateLegacyProviderSettings } from './co
 import { estimateCost, formatCostIDR, fetchUsdIdr, effectiveUsdIdr, cachedUsdIdr } from './pricing.js';
 import { storage } from './storage.js';
 import { resolveProviders, listModels, providerChat, probeEndpoint, fetchContextLimit, fetchModelPricing } from './providers.js';
+import { needsSummarize, splitForSummary, summarySystemPrompt, summaryMessage, buildContentsFrom } from './summarize.js';
 import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
 import { extractPdfText } from './pdf.js';
 import { extractDocxText } from './docx.js';
@@ -270,6 +271,36 @@ function buildContents() {
 
 function turnCount() {
   return state.messages.filter((m) => m.role === 'user' && !m.hidden).length;
+}
+
+// Ringkas riwayat otomatis bila prompt terakhir >= 80% context window.
+// Mengembalikan isi (contents) baru untuk balasan berikutnya, atau null bila
+// tidak diringkas / gagal. Dipakai jalur kirim pesan utama.
+async function maybeSummarizeHistory() {
+  if (!state.contextLimit) return null; // tak tahu limit -> jangan paksakan
+  const stats = sessionStats();
+  if (!needsSummarize(stats.lastPrompt, state.contextLimit)) return null;
+  const split = splitForSummary(state.messages);
+  if (!split) return null;
+  try {
+    const { text: summary } = await providerChat(state.settings.provider, {
+      apiKey: activeApiKey(),
+      model: state.settings.model,
+      systemPrompt: summarySystemPrompt(),
+      contents: buildContentsFrom(split.older),
+      thinkingLevel: thinkingLevelFor(),
+      grounding: false,
+      customProviders: state.settings.providers || [],
+    });
+    const recent = split.recent;
+    state.messages = [summaryMessage(summary), ...recent];
+    saveActiveSession();
+    showToast('Riwayat diringkas otomatis agar muat konteks.', 'info');
+    return buildContentsFrom(state.messages);
+  } catch (err) {
+    logApiError(err);
+    return null; // lanjut normal tanpa ringkasan
+  }
 }
 
 function isMobile() {
@@ -666,6 +697,8 @@ async function sendUserMessage(rawText, opts = {}) {
   let answered = false;
   let built = null;
   try {
+    // Ringkas riwayat bila mendekati batas konteks (hanya jalur kirim utama).
+    const contents = await maybeSummarizeHistory() || buildContents();
     removeTyping(typing);
     // Bubble dibuat sebelum await → token SSE mengalir langsung ke layar.
     built = addModelMessage(dom.messages);
@@ -679,7 +712,7 @@ async function sendUserMessage(rawText, opts = {}) {
         level: state.settings.level,
         webSearch: state.settings.webSearch,
       }),
-      contents: buildContents(),
+      contents,
       thinkingLevel: thinkingLevelFor(),
       grounding: state.settings.webSearch,
       customProviders: state.settings.providers || [],
