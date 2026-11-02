@@ -55,6 +55,14 @@ test('probeEndpoint: offline → error network; gagal keduanya → error ramah',
   await assert.rejects(() => probeEndpoint(''), (e) => e.type === 'badrequest');
 });
 
+test('probeEndpoint: fetch terblokir (CORS) → pesan menyebut CORS, bukan menyalahkan koneksi', async () => {
+  // Browser melempar TypeError tanpa info saat respons diblokir CORS.
+  stubFetch(() => { throw new TypeError('Failed to fetch'); });
+  await assert.rejects(() => probeEndpoint('http://127.0.0.1:1234'), (e) => {
+    return e.type === 'network' && /CORS/i.test(e.message);
+  });
+});
+
 // ---------- listModels ----------
 const LOCAL = { id: 'local', name: 'LM Studio', baseUrl: 'http://127.0.0.1:1234', modelsPath: '/models', chatPath: '/chat/completions' };
 

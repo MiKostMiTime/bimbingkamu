@@ -10,7 +10,7 @@
 const MESSAGES = {
   auth: 'Kunci API tidak valid untuk endpoint ini. Periksa kembali kunci atau kosongkan bila endpoint lokal.',
   quota: 'Kuota/rate limit endpoint tercapai. Coba lagi beberapa saat.',
-  network: 'Tidak bisa terhubung ke endpoint. Periksa koneksi & URL endpoint-mu.',
+  network: 'Tidak bisa terhubung ke endpoint. Periksa koneksi & URL — bila endpoint lokal (LM Studio/Ollama), aktifkan "Enable CORS" di pengaturan server-nya.',
   model: 'Model ini tidak tersedia di endpoint. Coba pilih model lain dari daftar.',
   server: 'Endpoint sedang sibuk. Coba lagi beberapa saat.',
   unknown: 'Terjadi kesalahan tak terduga. Coba lagi beberapa saat.',

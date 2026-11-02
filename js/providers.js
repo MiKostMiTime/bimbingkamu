@@ -46,7 +46,14 @@ export async function probeEndpoint(baseUrl, apiKey = '') {
     try {
       res = await fetch(`${base}${modelsPath}`, { headers: authHeader(apiKey) });
     } catch {
-      lastErr = { type: 'network', message: 'Tidak bisa terhubung ke endpoint. Periksa URL & koneksi.' };
+      // Browser melempar TypeError tanpa detail saat: offline, URL salah,
+      // ATAU respons diblokir CORS (server tidak mengirim
+      // Access-Control-Allow-Origin). Sebut keduanya di pesan.
+      lastErr = {
+        type: 'network',
+        message:
+          'Tidak bisa terhubung ke endpoint. Periksa URL & koneksi — bila endpoint lokal (LM Studio/Ollama), aktifkan "Enable CORS" / CORS di pengaturan server-nya.',
+      };
       continue; // coba kandidat berikutnya
     }
     if (res.ok) {
