@@ -57,9 +57,23 @@ export async function probeEndpoint(baseUrl, apiKey = '') {
       continue; // coba kandidat berikutnya
     }
     if (res.ok) {
-      // chatPath disimpulkan dari modelsPath yang hidup.
-      const chatPath = modelsPath.replace(/\/models$/, '/chat/completions');
-      return { modelsPath, chatPath };
+      // Validasi body — status 200 tidak cukup. LM Studio menjawab
+      // GET /models dengan 200 + {"error": ...} → path itu harus ditolak.
+      let looksLikeModels = false;
+      try {
+        const data = await res.json();
+        looksLikeModels = data && !data.error && Array.isArray(data.data);
+      } catch { looksLikeModels = false; }
+      if (looksLikeModels) {
+        // chatPath disimpulkan dari modelsPath yang hidup.
+        const chatPath = modelsPath.replace(/\/models$/, '/chat/completions');
+        return { modelsPath, chatPath };
+      }
+      lastErr = {
+        type: 'badrequest',
+        message: `${modelsPath} merespons tapi bukan daftar model. Coba URL lain (mis. .../v1).`,
+      };
+      continue; // coba kandidat berikutnya
     }
     lastErr = { ...mapApiError(res.status, '') };
   }

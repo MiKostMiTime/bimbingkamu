@@ -46,6 +46,21 @@ test('probeEndpoint: fallback /v1/models saat /models gagal + Bearer bila berkun
   assert.equal(calls[0].init.headers.Authorization, 'Bearer K');
 });
 
+test('probeEndpoint: 200 tapi body error → tolak path itu, lanjut kandidat berikutnya', async () => {
+  // LM Studio menjawab GET /models dengan 200 + {"error": ...} →
+  // path itu TIDAK boleh diterima hanya karena statusnya ok.
+  let n = 0;
+  const calls = stubFetch(() => {
+    n += 1;
+    if (n === 1) return okRes({ error: 'Unexpected endpoint or method. (GET /models)' });
+    return okRes({ data: [{ id: 'qwen-max' }] });
+  });
+  const r = await probeEndpoint('http://127.0.0.1:1234');
+  assert.deepEqual(r, { modelsPath: '/v1/models', chatPath: '/v1/chat/completions' });
+  assert.equal(calls[0].url, 'http://127.0.0.1:1234/models');
+  assert.equal(calls[1].url, 'http://127.0.0.1:1234/v1/models');
+});
+
 test('probeEndpoint: offline → error network; gagal keduanya → error ramah', async () => {
   stubFetch(() => { throw new Error('offline'); });
   await assert.rejects(() => probeEndpoint('http://127.0.0.1:1234'), (e) => e.type === 'network');
