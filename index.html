@@ -99,23 +99,23 @@
                 <circle cx="12" cy="12" r="9" />
                 <path d="M12 7v5l3 3" />
               </svg>
-              Durasi <strong id="timerValue">00:00</strong>
+              <span class="stat__label">Durasi</span> <strong id="timerValue">00:00</strong>
             </span>
             <span class="stat">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" />
               </svg>
-              Giliran <strong id="turnValue">0</strong>
+              <span class="stat__label">Giliran</span> <strong id="turnValue">0</strong>
             </span>
+          </div>
+          <div class="chat-header__actions">
             <span class="stat" id="tokenStat" title="Token sesi: masuk ↑ (prompt) · keluar ↓ (jawaban). Persentase = pemakaian context window model.">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="12" cy="12" r="3" />
                 <path d="M12 1v4M12 19v4M4.2 4.2l2.8 2.8M17 17l2.8 2.8M1 12h4M19 12h4M4.2 19.8 7 17M17 7l2.8-2.8" />
               </svg>
-              Token <strong id="tokenTotal">—</strong>
+              <span class="stat__label">Token</span> <strong id="tokenTotal">—</strong>
             </span>
-          </div>
-          <div class="chat-header__actions">
             <button id="exportBtn" class="btn btn--secondary btn--sm" type="button" disabled>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
