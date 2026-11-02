@@ -12,10 +12,53 @@ import { mapApiError, extractSources } from './api.js';
 // via probeEndpoint (onboarding / drawer Pengaturan).
 export const PROVIDERS = {};
 
-// Registry = custom dari settings.providers. Custom hanya dimasukkan
-// bila punya id + baseUrl; diberi flag custom.
+// Provider BAWAAN yang langsung muncul di dropdown saat peluncuran pertama,
+// agar fresh user tidak melihat "Belum ada endpoint". Shape-nya sama persis
+// dengan custom provider dari connectEndpoint (L240–251): id + baseUrl wajib,
+// modelsPath/chatPath untuk listModels & buildChatRequest, supportsGrounding /
+// supportsThinking untuk tools & thinkingLevel, custom:false agar setting
+// tersimpan stabil antar reload. Dynamic pricing tetap jalan: OpenRouter
+// terdeteksi otomatis (live), OpenAI/Gemini → null (UI tampilkan token tanpa
+// biaya). Id stabil + custom:false → migrateLegacyProviderSettings tidak
+// menyentuh seed.
+export const DEFAULT_PROVIDERS = {
+  'ep-openrouter': {
+    id: 'ep-openrouter',
+    name: 'OpenRouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    modelsPath: '/models',
+    chatPath: '/chat/completions',
+    supportsGrounding: false,
+    supportsThinking: true,
+    custom: false,
+  },
+  'ep-gemini': {
+    id: 'ep-gemini',
+    name: 'Gemini AI Studio',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    modelsPath: '/models',
+    chatPath: '/chat/completions',
+    supportsGrounding: true, // webSearch → tools google_search
+    supportsThinking: true,
+    custom: false,
+  },
+  'ep-openai': {
+    id: 'ep-openai',
+    name: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    modelsPath: '/models',
+    chatPath: '/chat/completions',
+    supportsGrounding: false,
+    supportsThinking: true,
+    custom: false,
+  },
+};
+
+// Registry = seed (DEFAULT_PROVIDERS) + custom dari settings.providers. Seed
+// dimasukkan duluan agar dropdown tidak kosong saat peluncuran pertama;
+// custom menimpa bila id-nya sama dan diberi flag custom.
 export function resolveProviders(custom = []) {
-  const all = { ...PROVIDERS };
+  const all = { ...PROVIDERS, ...DEFAULT_PROVIDERS };
   for (const p of custom) {
     if (p && p.id && p.baseUrl) all[p.id] = { ...p, custom: true };
   }
@@ -103,21 +146,15 @@ export async function fetchContextLimit(provider, apiKey, model) {
 }
 
 // ===== HARGA MODEL (DINAMIS, tanpa hardcode) =====
-// Prioritas sumber harga { input, output } per 1M token (USD):
-//   1. provider.pricing — input manual user di Pengaturan (sumber termurah &
-//      paling benar untuk endpoint berbayar yang tak melaporkan harga).
-//   2. LM Studio /api/v0/models → model lokal → Rp0 (gratis, tidak berbayar).
-//   3. OpenRouter (baseUrl mengandung openrouter.ai) → GET /api/v1/models
+// Harga model AMBIL dari provider-nya sendiri, jadi selalu menyesuaikan
+// endpoint yang dipakai — TANPA input manual:
+//   1. LM Studio /api/v0/models → model lokal → Rp0 (gratis, tidak berbayar).
+//   2. OpenRouter (baseUrl mengandung openrouter.ai) → GET /api/v1/models
 //      live pricing dari endpoint itu sendiri.
 // Selain itu → null (UI menampilkan token tanpa biaya).
 export async function fetchModelPricing(provider, apiKey, model) {
   if (!provider || !provider.baseUrl || !model) return null;
-  // 1) Input manual user menang.
-  const p = provider.pricing;
-  if (p && Number(p.input) >= 0 && Number(p.output) >= 0 && (Number(p.input) || Number(p.output))) {
-    return { input: Number(p.input), output: Number(p.output), source: 'manual' };
-  }
-  // 2) LM Studio → endpoint lokal, model gratis.
+  // 1) LM Studio → endpoint lokal, model gratis.
   const isLMStudio = await probeLMStudio(provider, apiKey);
   if (isLMStudio) return { input: 0, output: 0, source: 'local' };
   // 3) OpenRouter → live pricing dari endpoint-nya.

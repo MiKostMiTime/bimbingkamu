@@ -43,6 +43,7 @@ import {
   showOnboarding,
   setDialogCount,
   exportConversation,
+  exportStudyCard,
   clearAllData,
   formatDuration,
   formatRelativeDate,
@@ -81,12 +82,12 @@ const dom = {
   addCustomProvider: $('addCustomProvider'),
   connStatus: $('headerConnStatus'),
   webSearchToggle: $('webSearchToggle'),
+  toneSegment: $('toneSegment'),
+  toneButtons: Array.from(document.querySelectorAll('#toneSegment .segmented__btn')),
+  starters: document.querySelectorAll('.starter__btn'),
   timer: $('timerValue'),
   turns: $('turnValue'),
   tokenTotal: $('tokenTotal'),
-  priceInput: $('priceInputPer1M'),
-  priceOutput: $('priceOutputPer1M'),
-  usdIdrInput: $('usdIdrInput'),
   exportBtn: $('exportBtn'),
   chatScroll: $('chatScroll'),
   messages: $('chatMessages'),
@@ -97,7 +98,17 @@ const dom = {
 // ===== STATE =====
 // TIDAK ada provider/model bawaan — keduanya wajib dipilih dari endpoint
 // yang dihubungkan user (onboarding / drawer Pengaturan).
-const DEFAULT_SETTINGS = { mode: 'konsep', level: 3, model: '', webSearch: true, provider: '', providers: [], usdIdrManual: '' };
+// tone = derajat gaya bahasa (santai default; persona bawaan sudah santai).
+// starters = id chip prompt terakhir dipakai (highlight + urutan pertama saat load).
+const DEFAULT_SETTINGS = { mode: 'konsep', level: 3, model: '', webSearch: true, provider: '', providers: [], tone: 'santai', starters: 'uji', usdIdrManual: '' };
+
+// Isi input bila chip prompt starter diketok. “lainnya” → kosong (diketik manual).
+const STARTER_TEXT = {
+  uji: 'Buatku diuji dari materi — tanya aku bertahap sampai paham!',
+  jelasin: 'Jelasin bab ini tuntas: apa, mengapa, bagaimana, contoh.',
+  ringkasan: 'Ringkas materi jadi poin-poin yang mudah dihafal.',
+  latihan: 'Buatkan latihan soal + kunci jawaban dari materi.',
+};
 
 // Bersihkan jejak data lama (provider 'gemini', model gemini-*) agar
 // onboarding endpoint muncul lagi. Riwayat chat tidak disentuh.
@@ -203,7 +214,7 @@ async function refreshProviderModelList() {
       state.contextLimit = n;
       renderTokenStat(); // persentase konteks di header ikut muncul
     });
-    // Harga model (dinamis: input user → LM Studio lokal → OpenRouter live).
+    // Harga model dinamis dari provider (LM Studio lokal → OpenRouter live).
     fetchModelPricing(provider, activeApiKey(), state.settings.model).then((pr) => {
       state.pricing = pr;
       renderTokenStat();
@@ -398,7 +409,7 @@ function renderSessionList() {
     main.className = 'session-item__main';
     main.append(title, date);
 
-    // Tombol titik-tiga: buka dropdown opsi sesi (Esport / Hapus).
+    // Tombol titik-tiga: buka dropdown opsi sesi (Export / Hapus).
     const menuBtn = document.createElement('button');
     menuBtn.className = 'session-item__menu';
     menuBtn.type = 'button';
@@ -426,7 +437,7 @@ function renderSessionList() {
   }
 }
 
-// ===== RIWAYAT: MENU TITIK-TIGA (Esport / Hapus) =====
+// ===== RIWAYAT: MENU TITIK-TIGA (Export / Hapus) =====
 // Dropdown diposisikan `fixed` dari tombol agar tak terpotong overflow sidebar.
 let activeMenu = null; // { panel, btn, onDoc, onEsc } yang sedang terbuka
 
@@ -472,10 +483,13 @@ function openSessionMenu(session, menuBtn) {
   panel.style.right = `${Math.round(window.innerWidth - rect.right) + 8}px`;
   panel.style.left = 'auto';
 
-  // Esport hanya bila sesi punya pesan; Hapus selalu tersedia.
+  // Export hanya bila sesi punya pesan; Hapus selalu tersedia.
   if ((session.messages || []).length) {
     panel.appendChild(
-      makeMenuAction(EXPORT_ICON, 'Esport riwayat', () => exportSession(session))
+      makeMenuAction(EXPORT_ICON, 'Export riwayat', () => exportSession(session))
+    );
+    panel.appendChild(
+      makeMenuAction(CARD_ICON, 'Ekspor kartu (PNG)', () => exportStudyCardFor(session))
     );
   }
   panel.appendChild(makeMenuAction(TRASH_ICON, 'Hapus sesi', () => deleteSession(session.id), true));
@@ -683,6 +697,7 @@ async function generateGreeting() {
         materi: buildMateri(),
         mode: state.settings.mode,
         level: state.settings.level,
+        tone: state.settings.tone,
         webSearch: false,
       }),
       contents: [opening],
@@ -790,6 +805,7 @@ async function sendUserMessage(rawText, opts = {}) {
         materi: buildMateriFor(text),
         mode: state.settings.mode,
         level: state.settings.level,
+        tone: state.settings.tone,
         webSearch: state.settings.webSearch,
       }),
       contents,
@@ -894,6 +910,7 @@ async function regenerateLast() {
         materi: buildMateri(),
         mode: state.settings.mode,
         level: state.settings.level,
+        tone: state.settings.tone,
         webSearch: state.settings.webSearch,
       }),
       contents: plan.contents,
@@ -953,7 +970,7 @@ async function regenerateFrom(editIdx) {
   // systemPrompt diambil ulang tiap panggilan agar selalu sesuai setting terkini.
   const systemPrompt = () => buildSystemPrompt({
     materi: buildMateri(), mode: state.settings.mode,
-    level: state.settings.level, webSearch: state.settings.webSearch,
+    level: state.settings.level, webSearch: state.settings.webSearch, tone: state.settings.tone,
   });
 
   try {
@@ -1035,45 +1052,24 @@ function hydrateSettings() {
   dom.level.value = String(state.settings.level);
   updateLevelLabel();
   dom.webSearchToggle.checked = state.settings.webSearch !== false;
+  // Gaya bahasa (tone): Santai ↔ Formal.
+  dom.toneButtons.forEach((btn) => {
+    const active = btn.dataset.tone === state.settings.tone;
+    btn.setAttribute('aria-pressed', String(active));
+    btn.classList.toggle('is-active', active);
+  });
+  // Highlight chip prompt starter terakhir dipakai (default: uji).
+  dom.starters.forEach((btn) => {
+    const active = btn.dataset.starter === (state.settings.starters || 'uji');
+    btn.setAttribute('aria-pressed', String(active));
+    btn.classList.toggle('is-active', active);
+  });
   // Model tersimpan mungkin tak ada lagi di endpoint → biarkan kosong;
   // daftar model disegarkan dari endpoint via refreshProviderModelList().
   const hasSavedModel = [...dom.model.options].some(
     (o) => o.value === state.settings.model
   );
   if (hasSavedModel) dom.model.value = state.settings.model;
-  // Harga manual (tersimpan per endpoint) + kurs override.
-  const active = currentProviders()[state.settings.provider];
-  const pr = active && active.pricing;
-  dom.priceInput.value = pr && Number.isFinite(Number(pr.input)) ? pr.input : '';
-  dom.priceOutput.value = pr && Number.isFinite(Number(pr.output)) ? pr.output : '';
-  dom.usdIdrInput.value = state.settings.usdIdrManual || '';
-}
-
-// Simpan harga manual (USD/1M) untuk endpoint aktif + kurs override,
-// lalu hitung ulang pricing sesi & statistik header.
-function applyPricingInputs() {
-  const inP = parseFloat(dom.priceInput.value);
-  const outP = parseFloat(dom.priceOutput.value);
-  const hasPrice = Number.isFinite(inP) && Number.isFinite(outP) && (inP > 0 || outP > 0);
-  const provider = currentProviders()[state.settings.provider];
-  if (provider) {
-    provider.pricing = hasPrice ? { input: inP, output: outP } : undefined;
-    state.settings.providers = (state.settings.providers || []).map((p) =>
-      p.id === provider.id ? { ...p, pricing: provider.pricing } : p
-    );
-  }
-  const manual = parseFloat(dom.usdIdrInput.value);
-  state.settings.usdIdrManual = Number.isFinite(manual) && manual > 0 ? String(manual) : '';
-  persistSettings();
-  // Hitung ulang langsung (tanpa menunggu probe ulang endpoint).
-  if (hasPrice) state.pricing = { input: inP, output: outP, source: 'manual' };
-  else fetchModelPricing(provider, activeApiKey(), state.settings.model).then((pr2) => {
-    state.pricing = pr2;
-    renderTokenStat();
-  });
-  state.usdIdr = effectiveUsdIdr(state.settings.usdIdrManual);
-  if (!state.settings.usdIdrManual) fetchUsdIdr().then((r) => { if (r) { state.usdIdr = r; renderTokenStat(); } });
-  renderTokenStat();
 }
 
 function updateMateriCount() {
@@ -1422,9 +1418,6 @@ function bindEvents() {
     renderProviderOptions();
     refreshProviderModelList();
   });
-  dom.priceInput.addEventListener('change', applyPricingInputs);
-  dom.priceOutput.addEventListener('change', applyPricingInputs);
-  dom.usdIdrInput.addEventListener('change', applyPricingInputs);
   dom.addCustomProvider.addEventListener('click', () => {
     connectEndpoint({
       baseUrl: dom.customBaseUrl.value,
@@ -1521,6 +1514,41 @@ function bindEvents() {
     persistSettings();
   });
 
+  // Gaya bahasa (tone): Santai ↔ Formal → ubah derajat system prompt.
+  dom.toneButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.settings.tone = btn.dataset.tone;
+      persistSettings();
+      dom.toneButtons.forEach((b) => {
+        const active = b === btn;
+        b.setAttribute('aria-pressed', String(active));
+        b.classList.toggle('is-active', active);
+      });
+    });
+  });
+
+  // Prompt starters: ketok → isi input, autosize, fokus (biar diedet/kirim).
+  // “Lainnya” → kosong agar diketik manual. Chip terakhir-used disimpan.
+  dom.starters.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.settings.starters = btn.dataset.starter;
+      persistSettings();
+      dom.starters.forEach((b) => {
+        const active = b === btn;
+        b.setAttribute('aria-pressed', String(active));
+        b.classList.toggle('is-active', active);
+      });
+      if (btn.dataset.starter === 'lainnya') {
+        dom.input.focus();
+        return;
+      }
+      dom.input.value = STARTER_TEXT[btn.dataset.starter] || '';
+      autosizeInput();
+      updateComposer();
+      dom.input.focus();
+    });
+  });
+
   // Chat
   dom.input.addEventListener('input', () => {
     autosizeInput();
@@ -1615,6 +1643,27 @@ function exportCurrent() {
   exportSession();
 }
 
+// Ekspor kartu studi PNG dari sesi (aktif atau spesifik). Mode/level/model
+// diambil dari settings aktif (sama seperti exportSession); tanggal pakai
+// riwayat bila sesi dipilih, sekarang bila sesi aktif.
+function exportStudyCardFor(session) {
+  const target = session || currentSessionRecord();
+  if (!target || !(target.messages || []).length) return;
+  const messages = session ? target.messages : state.messages;
+  const date = session
+    ? formatRelativeDate(target.updatedAt)
+    : new Date().toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'short' });
+  exportStudyCard({
+    messages,
+    meta: {
+      mode: state.settings.mode,
+      level: state.settings.level,
+      model: state.settings.model,
+      date,
+    },
+  });
+}
+
 // ===== IKON =====
 const EYE =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -1628,6 +1677,8 @@ const MENU_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>';
 const EXPORT_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>';
+const CARD_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>';
 
 // ===== TIMER WAKTU AKTIF =====
 // Hanya bertambah bila ada pesan, tab terlihat, dan ada aktivitas dalam 60 dtk

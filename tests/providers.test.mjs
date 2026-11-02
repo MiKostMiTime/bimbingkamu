@@ -1,7 +1,7 @@
 // tests/providers.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PROVIDERS, listModels, resolveProviders, chatCompletion, probeEndpoint, providerChat } from '../js/providers.js';
+import { PROVIDERS, DEFAULT_PROVIDERS, listModels, resolveProviders, chatCompletion, probeEndpoint, providerChat } from '../js/providers.js';
 import { extractSources } from '../js/api.js';
 
 function stubFetch(responder) {
@@ -52,7 +52,7 @@ test('chatCompletion: tanpa onDelta → jalur non-stream biasa (tanpa body.strea
 // ---------- registry ----------
 test('PROVIDERS: registry bawaan KOSONG (tanpa gemini hardcode)', () => {
   assert.deepEqual(PROVIDERS, {});
-  assert.deepEqual(resolveProviders(), {});
+  assert.deepEqual(resolveProviders(), DEFAULT_PROVIDERS);
 });
 
 test('resolveProviders: gabung custom by id + flag custom', () => {

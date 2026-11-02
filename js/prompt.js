@@ -193,8 +193,23 @@ function materiBlock(materi, webSearch = false) {
   ].join('\n');
 }
 
+// ===== BLOK GAYA BICARA (tone) =====
+// Disisipkan setelah PERSONA. Persona bawaan sudah santai → tone mengatur
+// derajat-nya saja; metode Socratic tetap dipakai.
+function toneBlock(tone = 'santai') {
+  return tone === 'formal'
+    ? [
+        '## GAYA BICARA (santai / formal)',
+        'Gunakan bahasa Indonesia lebih rapi dan terstruktur: minim emoji, kalimat lengkap, struktur jelas. Tetap hangat dan ramah, tapi tidak kekanak-kanakan. Tetap sapa siswa “kamu” (bukan “Anda”) agar tidak kaku berlebihan.',
+      ].join('\n')
+    : [
+        '## GAYA BICARA (santai / formal)',
+        'Gunakan bahasa santai ala remaja: sedikit gaul, hidup, dan dekat. Manfaatkan analogi sehari-hari (mis. bandingkan konsep dengan suasana kelas, PR, atau kafe). Boleh emoji secukupnya (💡 🎯) sebagai penanda bagian. Sapa siswa “kamu”.',
+      ].join('\n');
+}
+
 // ===== SYSTEM PROMPT UTAMA =====
-export function buildSystemPrompt({ materi, mode, level, webSearch = false }) {
+export function buildSystemPrompt({ materi, mode, level, webSearch = false, tone = 'santai' }) {
   const aturan = [
     mode === 'penjelasan'
       ? '1. Pola mengajar: JELASKAN TUNTAS. Sampaikan penjelasan lengkap dan runtut (apa, mengapa, bagaimana, contoh/analogi) dalam satu balasan; pertanyaan cek pemahaman di akhir hanya opsional, bukan wajib.'
@@ -214,6 +229,8 @@ export function buildSystemPrompt({ materi, mode, level, webSearch = false }) {
     'Tugasmu membantu siswa benar-benar MEMAHAMI materi miliknya: jelaskan dengan jelas, rinci, dan menarik; cek pemahamannya; dan bimbing sampai ia bisa menjelaskannya dengan kata-katanya sendiri.',
     '',
     PERSONA,
+    '',
+    toneBlock(tone),
     '',
     materiBlock(materi, webSearch),
     '',

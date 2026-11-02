@@ -124,6 +124,14 @@
         </div>
 
         <div class="composer">
+          <!-- Contoh pertanyaan (prompt starters): ketok → isi input, biar diedit/kirim -->
+          <div class="starters" role="group" aria-label="Contoh pertanyaan">
+            <button type="button" class="starter__btn" data-starter="uji" aria-pressed="true">🧪 Uji pemahaman</button>
+            <button type="button" class="starter__btn" data-starter="jelasin">📖 Jelasin bab ini</button>
+            <button type="button" class="starter__btn" data-starter="ringkasan">✍️ Ringkasan</button>
+            <button type="button" class="starter__btn" data-starter="latihan">📝 Latihan + kunci</button>
+            <button type="button" class="starter__btn" data-starter="lainnya">💬 Lainnya</button>
+          </div>
           <div class="composer__inner">
             <div class="composer__input-wrap">
               <textarea
@@ -210,19 +218,6 @@
           <p class="field__hint">Daftar model otomatis diambil dari endpoint terpilih.</p>
         </div>
         <div class="field">
-          <label class="field__label">Harga model (USD per 1M token — opsional)</label>
-          <div style="display:flex;gap:var(--space-2)">
-            <input id="priceInputPer1M" class="input" type="number" min="0" step="0.01" placeholder="Input $/1M" autocomplete="off" />
-            <input id="priceOutputPer1M" class="input" type="number" min="0" step="0.01" placeholder="Output $/1M" autocomplete="off" />
-          </div>
-          <p class="field__hint">Isi bila endpoint berbayar tapi tidak melaporkan harga (cek situs providernya). Endpoint lokal (LM Studio) otomatis dianggap gratis.</p>
-        </div>
-        <div class="field">
-          <label class="field__label" for="usdIdrInput">Kurs Rp per USD (opsional)</label>
-          <input id="usdIdrInput" class="input" type="number" min="1" step="1" placeholder="Kosong = otomatis dari API kurs" autocomplete="off" />
-          <p class="field__hint">Estimasi biaya ditampilkan dalam Rupiah di statistik Token. Kurs otomatis di-cache 24 jam.</p>
-        </div>
-        <div class="field">
           <label class="field__label" for="customBaseUrl">Tambah endpoint ([OI]-compatible)</label>
           <input id="customBaseUrl" class="input" type="text" placeholder="http://127.0.0.1:1234" autocomplete="off" spellcheck="false" />
           <input id="customProviderName" class="input" type="text" placeholder="Nama endpoint (opsional)" autocomplete="off" style="margin-top:var(--space-2)" />
@@ -292,6 +287,17 @@
             </button>
             <button class="segmented__btn" type="button" data-mode="ujian" aria-pressed="false">
               Persiapan Ujian
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <span class="field__label" id="toneLabel">Gaya Bahasa</span>
+          <div id="toneSegment" class="segmented" role="group" aria-labelledby="toneLabel">
+            <button class="segmented__btn is-active" type="button" data-tone="santai" aria-pressed="true">
+              Santai
+            </button>
+            <button class="segmented__btn" type="button" data-tone="formal" aria-pressed="false">
+              Formal
             </button>
           </div>
         </div>

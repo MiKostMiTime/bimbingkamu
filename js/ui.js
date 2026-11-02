@@ -4,6 +4,7 @@
 // =========================================================
 import { storage } from './storage.js';
 import { getModeLabel, getLevelLabel } from './config.js';
+import { buildStudyCard, injectCardStyles, loadHtml2canvas } from './card.js';
 
 // ===== IKON (inline SVG) =====
 const ICONS = {
@@ -416,6 +417,61 @@ function download(filename, text) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ===== EKSPOR KARTU STUDI (.png) =====
+// Ringkas sesi menjadi gambar PNG shareable (WA/IG). html2canvas dimuat
+// on-demand; bila gagal (offline/CDN mati) → fallback ekspor ke .md.
+export async function exportStudyCard({ messages = [], meta = {} }) {
+  if (!(messages || []).length) return;
+
+  const date = meta.date || new Date().toLocaleString('id-ID', {
+    dateStyle: 'full',
+    timeStyle: 'short',
+  });
+  const cardMeta = {
+    modeLabel: getModeLabel(meta.mode) || '',
+    level: meta.level,
+    model: meta.model,
+    date,
+  };
+
+  injectCardStyles();
+  const node = buildStudyCard({ messages, meta: cardMeta });
+
+  // Tempel di luar layar agar html2canvas bisa membaca layout & gaya.
+  const host = document.createElement('div');
+  host.style.position = 'fixed';
+  host.style.left = '-10000px';
+  host.style.top = '0';
+  host.appendChild(node);
+  document.body.appendChild(host);
+
+  try {
+    const h2c = await loadHtml2canvas();
+    const canvas = await h2c(node, {
+      backgroundColor: '#ffffff',
+      scale: 2, // ketajahan retina
+      useCSS: true,
+    });
+    const dataUrl = canvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    link.href = dataUrl;
+    link.download = `tanyabukan-kartu-studi-${stamp}.png`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(dataUrl), 2000);
+    showToast('Karti studi berhasil diunduh sebagai PNG.', 'success');
+  } catch (err) {
+    // Fallback: ekspor ke .md bila html2canvas gagal (offline/CDN mati).
+    console.error('[TanyaBukan] Ekspor kartu gagal, fallback ke .md:', err);
+    exportConversation({ meta, messages });
+    showToast('Gambar tak dibuat; ekspor ke .md sebagai cadangan.', 'info');
+  } finally {
+    host.remove();
+  }
 }
 
 // ===== HAPUS SEMUA DATA =====

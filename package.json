@@ -1,0 +1,16 @@
+{
+  "name": "tanyabukan",
+  "version": "1.0.0",
+  "description": "Tutor belajar Socratic berbasis RAG untuk siswa SMA Indonesia. Alih-alih langsung menjawab, TanyaBukan membimbingmu menemukan jawaban **dari materi milikmu sendiri** — lebih dalam dan lebih fokus, dengan halusinasi yang ditekan lewat batasan prompt dan penandaan kutipan yang tidak ditemukan di materi (bukan jaminan mutlak).",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
