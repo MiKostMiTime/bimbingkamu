@@ -1,0 +1,6 @@
+# Ad-hoc verification harnesses (local scratch).
+# Unit truth lives in ../tests/*.mjs; these are throwaway end-to-end probes.
+*.mjs
+
+# Keep the RAG send-path proof as a committed artifact.
+!rag-harness.mjs
