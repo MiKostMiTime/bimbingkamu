@@ -174,6 +174,15 @@
   border-color: var(--color-accent-border);
 }
 
+/* Tombol HAPUS (label "Hapun pertanyaan" / "Hapus balasan"): hover jadi merah
+   agar beda dari aksi lain. Spesifisitas lebih tinggi + muncul setelah aturan
+   base di atas, sehingga menimpa warna accent pada tombol hapus saja. */
+.msg__action[aria-label*="Hapu"]:hover:not(:disabled) {
+  background: var(--color-error-soft);
+  color: var(--color-error);
+  border-color: var(--color-error-border);
+}
+
 .msg__action:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 1px;

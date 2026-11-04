@@ -366,6 +366,18 @@ export function removeTyping(el) {
   if (el && el.parentNode) el.remove();
 }
 
+// Sisipkan indikator titik-titik (.typing) ke dalam bubble konten model agar
+// progress "sedang menulis" tetap terlihat saat model sedang berpikir,
+// yaitu sebelum token pertama muncul. Kembalikan elemen .typing agar bisa dihapus.
+export function insertBubbleTyping(content) {
+  const typing = document.createElement('div');
+  typing.className = 'typing';
+  typing.setAttribute('aria-label', 'Tutor sedang menulis');
+  for (let i = 0; i < 3; i += 1) typing.appendChild(document.createElement('span'));
+  content.appendChild(typing);
+  return typing;
+}
+
 // ===== EFEK TYPING PROGRESIF =====
 // Munculkan teks kata-per-kata (adaptif, maks. ±2,5 dtk) dengan render
 // markdown berkala. Kembalikan { skip } untuk men-skip.

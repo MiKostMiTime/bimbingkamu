@@ -26,6 +26,7 @@ import {
   addActionbar,
   showTyping,
   removeTyping,
+  insertBubbleTyping,
   streamText,
   clearMessages,
   renderEmptyState,
@@ -1061,17 +1062,19 @@ async function sendUserMessage(rawText, opts = {}) {
 
   state.busy = true;
   updateComposer();
-  const typing = showTyping(dom.messages);
   scrollToEnd(dom.chatScroll, true);
 
   let answered = false;
   let built = null;
+  let dots = null;
   try {
     // Ringkas riwayat bila mendekati batas konteks (hanya jalur kirim utama).
     const contents = await maybeSummarizeHistory() || buildContents();
-    removeTyping(typing);
     // Bubble dibuat sebelum await → token SSE mengalir langsung ke layar.
     built = addModelMessage(dom.messages);
+    // Tandai "sedang menulis" di dalam bubble (bukan bubble terpisah) agar
+    // progress tetap terlihat saat model sedang berpikir, sebelum token pertama.
+    dots = insertBubbleTyping(built.content);
     let streamed = false;
     const { text: reply, tokens, sources } = await providerChat(state.settings.provider, {
       apiKey: activeApiKey(),
@@ -1087,23 +1090,28 @@ async function sendUserMessage(rawText, opts = {}) {
       thinkingLevel: thinkingLevelFor(),
       grounding: state.settings.webSearch,
       customProviders: state.settings.providers || [],
-      onDelta: (acc) => { streamed = true; renderRich(built.content, acc); scrollToEnd(dom.chatScroll); },
+      onDelta: (acc) => {
+        if (!streamed) { dots.remove(); streamed = true; }
+        renderRich(built.content, acc); scrollToEnd(dom.chatScroll);
+      },
     });
     const modelMsg = { role: 'model', text: reply, sources, tokens };
     state.messages.push(modelMsg);
     answered = true;
     if (streamed) {
+      dots.remove(); // jaga-gaga: titik-titik sudah/harus hilang sebelum render akhir
       renderRich(built.content, reply); // render final (markdown lengkap)
       state.busy = false;
       scrollToEnd(dom.chatScroll);
     } else {
+      dots.remove();
       streamReply(built.content, reply, built.msg); // fallback: endpoint tanpa SSE
     }
     renderSources(built.msg, sources, { onSave: () => saveWebMateri(sources) });
     stampModelBubble(built.msg);
     buildModelActions(built.col, built.msg);
   } catch (err) {
-    removeTyping(typing);
+    removeTyping(dots);
     state.busy = false;
     if (!answered) {
       // Batalkan giliran yang gagal: riwayat API tetap bergantian rapi,
