@@ -10,23 +10,24 @@
     />
     <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg" />
 
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <!-- Semua aset pihak ketiga diservis dari repository ini; bukan dari
+         CDN eksternal. Lisensi tersedia di vendor/licenses/. -->
+    <link rel="stylesheet" href="./vendor/fonts/inter.css" />
 
     <link rel="stylesheet" href="./css/variables.css" />
     <link rel="stylesheet" href="./css/main.css" />
     <link rel="stylesheet" href="./css/components.css" />
 
-    <!-- Library rendering (dibatasi 2): markdown + sanitasi.
-         pdf.js (js/pdf.js) dan KaTeX (js/math.js) tidak dimuat
-         di sini: keduanya on-demand dari CDN yang sama, hanya
-         saat dipakai (unggah PDF / balasan berisi rumus). -->
-    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.5/dist/purify.min.js"></script>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https:; connect-src https: http:; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; manifest-src 'self'"
+    />
+
+    <!-- Library rendering: markdown + sanitasi. PDF.js dan KaTeX
+         dimuat on-demand hanya saat dipakai (unggah PDF / rumus).
+         Semua berkas dilayani dari ./vendor, bukan CDN eksternal. -->
+    <script src="./vendor/marked/marked.min.js"></script>
+    <script src="./vendor/dompurify/purify.min.js"></script>
   </head>
   <body>
     <!-- Judul halaman utama (H1) untuk a11y / screen-reader; disembunyikan secara visual agar tata letak tetap utuh -->

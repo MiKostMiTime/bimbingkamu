@@ -1,20 +1,16 @@
 // =========================================================
 // TanyaBukan — CARD (Ekspor Kartu Studi ke PNG)
 // Mengubah ringkasan sesi menjadi gambar PNG yang shareable
-// (untuk WA/IG/Story). html2canvas dimuat on-demand (UMD dari
-// CDN) hanya saat user mengetok "Ekspor kartu", jadi aturan
-// "maks. 2 CDN di index.html" tetap utuh — pola sama seperti
-// pdf.js (js/pdf.js) dan KaTeX (js/math.js).
+// (untuk WA/IG/Story). html2canvas dimuat on-demand (UMD yang
+// diservis dari repository ini) hanya saat user mengetok "Ekspor kartu".
 // =========================================================
 
 // ===== LIBRARY (dipin) =====
-const HTML2CANVAS_LIB_URL =
-  'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+const HTML2CANVAS_LIB_URL = './vendor/html2canvas/html2canvas.min.js';
 
 // ===== MUAT LIBRARY (sekali pakai, bisa retry) =====
-// UMD menempel di globalThis.html2canvas. Gagal (offline/CDN mati)
-// → error ramah; promise di-reset supaya percobaan berikutnya
-// bisa mencoba ulang.
+// UMD menempel di globalThis.html2canvas. Gagal memuat (berkas vendor
+// hilang/diblokir) → error ramah agar UI bisa fallback ke ekspor .md.
 let h2cPromise = null;
 
 function loadHtml2canvasOnce() {
@@ -39,9 +35,9 @@ export function loadHtml2canvas() {
     h2cPromise = loadHtml2canvasOnce().catch((err) => {
       h2cPromise = null;
       throw {
-        type: 'cdn',
+        type: 'vendor',
         message:
-          'Ekspor gambar butuh koneksi internet untuk memuat alat cetak. Muat ulang halaman, atau ekspor ke .md.',
+          'Ekspor gambar gagal: berkas lokal vendor/html2canvas tidak ditemukan. Muat ulang halaman, atau ekspor ke .md.',
         cause: err,
       };
     });
@@ -60,8 +56,8 @@ function escapeHtml(str) {
 }
 
 // ===== MARKDOWN SEDERHANA → HTML =====
-// Memakai marked + DOMPurify (sudah global dari CDN di index.html).
-// Jika CDN gagal (offline), turunkan ke teks polos yang di-escape.
+// Memakai marked + DOMPurify (sudah global dari index.html, keduanya diservis
+// dari ./vendor). Jika ada masalah memuat, turunkan ke teks polos yang di-escape.
 function renderMarkdownToHtml(text) {
   const markedLib = window.marked;
   const purify = window.DOMPurify;

@@ -1,20 +1,18 @@
 // =========================================================
 // TanyaBukan — DOCX
 // Ekstraksi teks dari file Word (.docx) yang diunggah.
-// Memakai mammoth 1.11.0 (UMD self-contained, version dipin)
-// dari CDN — dimuat on-demand (tag <script>) hanya ketika
-// user mengunggah .docx, jadi aturan "maks. 2 CDN di
-// index.html" tetap utuh (satu pustaka = satu tag).
+// Memakai mammoth 1.11.0 (UMD self-contained, version dipin), diservis
+// dari repository ini (./vendor/mammoth) — dimuat on-demand sesuai
+// kebutuhan.
 // =========================================================
 
 // ===== LIBRARY (dipin) =====
-const DOCX_LIB_URL =
-  'https://cdn.jsdelivr.net/npm/mammoth@1.11.0/mammoth.browser.min.js';
+const DOCX_LIB_URL = './vendor/mammoth/mammoth.browser.min.js';
 
 // ===== MUAT LIBRARY (sekali pakai, bisa retry) =====
-// UMD menempel di globalThis.mammoth. Gagal (offline/CDN mati)
-// → error ramah; promise di-reset supaya percobaan berikutnya
-// bisa mencoba ulang.
+// UMD menempel di globalThis.mammoth. Gagal memuat (berkas vendor
+// hilang/diblokir) → error ramah; promise di-reset agar retry berikut
+// dapat mencoba lagi.
 let docxLibPromise = null;
 
 function loadDocxLibOnce() {
@@ -41,9 +39,9 @@ export function loadDocxLib() {
     docxLibPromise = loadDocxLibOnce().catch((err) => {
       docxLibPromise = null;
       throw {
-        type: 'cdn',
+        type: 'vendor',
         message:
-          'Library DOCX gagal dimuat (butuh koneksi ke internet). Muat ulang halaman, atau unggah .txt/.md/.pdf.',
+          'Library DOCX gagal dimuat (berkas lokal vendor/mammoth tidak ditemukan). Muat ulang halaman, atau unggah .txt/.md/.pdf.',
         cause: err,
       };
     });

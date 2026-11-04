@@ -232,6 +232,15 @@ async function probeLMStudio(provider, apiKey) {
 
 // Ambil daftar ID model chat-capable dari endpoint provider.
 // GET ${baseUrl}${modelsPath} → filter model yang bisa chat, dedup per id.
+// Id model dari respons /models endpoint (pemilik endpoint bisa mengontrol
+// isinya). Disair lewat whitelist karakter agar aman disisipkan ke <option>
+// tanpa escape — karakter yang tersisa [A-Za-z0-9._/-] tidak ada yang spesial
+// untuk HTML, jadi tak bisa tembus XSS. Dipakai di dropdown model (app.js) dan
+// onboarding (ui.js), keduanya mengambil hasil fungsi ini.
+export function sanitizeModelId(id) {
+  return String(id ?? '').replace(/[^A-Za-z0-9._/-]/g, '');
+}
+
 export async function listModels(apiKey, provider) {
   if (!provider || !provider.baseUrl) {
     throw { type: 'badrequest', message: 'Endpoint belum terdaftar. Tambahkan endpoint dulu.' };
@@ -257,9 +266,10 @@ export async function listModels(apiKey, provider) {
     // Hanya embedding → buang; tanpa capabilities atau ada chat → ikut.
     const isEmbeddingOnly = caps.length > 0 && !caps.includes('chat/completions');
     if (m.owned_by === 'embedding' || isEmbeddingOnly) continue;
-    if (seen.has(m.id)) continue; // duplikat id → lewati
-    seen.add(m.id);
-    ids.push(m.id);
+    const id = sanitizeModelId(m.id);
+    if (!id || seen.has(id)) continue; // kosong atau duplikat → lewati
+    seen.add(id);
+    ids.push(id);
   }
   return ids;
 }

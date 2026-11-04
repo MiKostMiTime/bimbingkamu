@@ -1,10 +1,9 @@
 // =========================================================
 // TanyaBukan — PDF
 // Ekstraksi teks dari file PDF yang diunggah.
-// Memakai pdf.js 3.11.174 (UMD, version dipin) dari CDN —
-// dimuat on-demand (tag <script>) hanya ketika user
-// benar-benar mengunggah file .pdf, jadi aturan "maks. 2
-// CDN di index.html" tetap utuh.
+// Memakai pdf.js 3.11.174 (UMD, version dipin), diservis dari
+// repository ini (./vendor/pdfjs) — dimuat on-demand saat user
+// benar-benar mengunggah file .pdf.
 //
 // Kenapa v3 (bukan v6 terbaru)? pdf.js 6 memakai
 // Promise.withResolvers (butuh browser 2023+) di jalur
@@ -14,15 +13,13 @@
 // =========================================================
 
 // ===== LIBRARY (dipin) =====
-const PDF_LIB_URL =
-  'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
-const PDF_WORKER_URL =
-  'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+const PDF_LIB_URL = './vendor/pdfjs/pdf.min.js';
+const PDF_WORKER_URL = './vendor/pdfjs/pdf.worker.min.js';
 
 // ===== MUAT LIBRARY (sekali pakai, bisa retry) =====
-// UMD menempel di globalThis.pdfjsLib. Gagal (offline/CDN mati)
-// → error ramah; promise di-reset supaya percobaan berikutnya
-// bisa mencoba ulang.
+// UMD menempel di globalThis.pdfjsLib. Gagal memuat (berkas vendor
+// hilang/diblokir) → error ramah; promise di-reset agar retry berikut
+// bisa mencoba lagi.
 let pdfLibPromise = null;
 
 function loadPdfLibOnce() {
@@ -49,9 +46,9 @@ export function loadPdfLib() {
     pdfLibPromise = loadPdfLibOnce().catch((err) => {
       pdfLibPromise = null;
       throw {
-        type: 'cdn',
+        type: 'vendor',
         message:
-          'Library PDF gagal dimuat (butuh koneksi ke internet). Muat ulang halaman, atau unggah .txt/.md/.docx.',
+          'Library PDF gagal dimuat (berkas lokal vendor/pdfjs tidak ditemukan). Muat ulang halaman, atau unggah .txt/.md/.docx.',
         cause: err,
       };
     });

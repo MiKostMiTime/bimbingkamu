@@ -7,8 +7,13 @@
 // (pola sama seperti pdf.js).
 // =========================================================
 
-const KATEX_JS_URL = 'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.mjs';
-const KATEX_CSS_URL = 'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.css';
+// Catatan: path JS relatif terhadap math.js (berada di folder js/), bukan
+// terhadap halaman. import() dinamis memecat specifier terhadap lokasi modul,
+// jadi harus '../vendor/...' (naik ke root) agar menemukan vendor/katex/.
+// Sebaliknya, KATEX_CSS_URL disuntikkan lewat <link> DOM → resolusinya terhadap
+// basis dokumen (root), jadi './vendor/...' di sini tetap benar.
+const KATEX_JS_URL = '../vendor/katex/katex.mjs';
+const KATEX_CSS_URL = './vendor/katex/katex.min.css';
 
 // Muat modul KaTeX sekali pakai (dynamic import). CSS (dan
 // font yang di-referensinya) disuntikkan ke <head>.
