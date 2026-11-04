@@ -90,11 +90,7 @@ const dom = {
   levelDesc: $('levelDesc'),
   model: $('modelSelect'),
   providerSelect: $('providerSelect'),
-  customBaseUrl: $('customBaseUrl'),
-  customProviderName: $('customProviderName'),
-  customProviderKey: $('customProviderKey'),
-  providerKeyToggle: $('providerKeyToggle'),
-  addCustomProvider: $('addCustomProvider'),
+  addEndpointBtn: $('addEndpointBtn'),
   providerList: $('providerList'),
   connStatus: $('headerConnStatus'),
   webSearchToggle: $('webSearchToggle'),
@@ -157,9 +153,6 @@ function logApiError(err) {
 // Setelah endpoint dipilih/ditambahkan, tanyakan model apa yang bisa
 // dipakai endpoint itu (SELALU dari endpoint, bukan daftar hardcode),
 // lalu segarkan selector model di header chat.
-
-// ID endpoint yang sedang disunting di drawer Pengaturan ('' = mode tambah).
-let editingProviderId = '';
 
 // Registry provider = endpoint terdaftar user (tanpa bawaan).
 function currentProviders() { return resolveProviders(state.settings.providers || []); }
@@ -278,7 +271,6 @@ async function connectEndpoint({ baseUrl, name, key, providerId }) {
   persistSettings();
   renderProviderOptions();
   await refreshProviderModelList();
-  clearEndpointEdit();
   renderEndpoints();
   showToast(`Endpoint "${provider.name}" ${providerId ? 'disunting.' : 'terhubungkan.'}`, 'success');
   return listModels(activeApiKey(), provider);
@@ -337,55 +329,43 @@ function renderEndpoints() {
     .join('');
 }
 
-// Kembalikan form ke mode tambah (kosong + label asli).
-function clearEndpointEdit() {
-  dom.customBaseUrl.value = '';
-  dom.customProviderName.value = '';
-  dom.customProviderKey.value = '';
-  dom.customProviderKey.type = 'password';
-  if (dom.providerKeyToggle) {
-    dom.providerKeyToggle.innerHTML = EYE;
-    dom.providerKeyToggle.setAttribute('aria-label', 'Tampilkan kunci');
-  }
-  editingProviderId = '';
-  dom.addCustomProvider.textContent = 'Hubungkan endpoint';
-}
-
-// Buka modal pop-up untuk menyunting endpoint (Base URL, nama, kunci).
-// Mengganggu form atas seminimal mungkin; simpan memanggil connectEndpoint()
-// dengan providerId sehingga mode edit memakai id yang sama + kapabilitas
-// seed (Gemini grounding / thinking) tetap terjaga.
-function editEndpoint(id) {
-  const p = currentProviders()[id];
-  if (!p) return;
+// Modal pop-up universal untuk menambah (id kosong) / menyunting endpoint
+// (Base URL, nama, kunci). Satu-satunya jalur kelola endpoint di Pengaturan;
+// simpan memanggil connectEndpoint() — mode edit memakai id yang sama sehingga
+// kapabilitas seed (Gemini grounding / thinking) tetap terjaga.
+function openEndpointModal(id) {
+  const isEdit = Boolean(id);
+  const p = isEdit ? currentProviders()[id] : null;
+  if (isEdit && !p) return;
 
   const modalRef = showModal({
-    title: 'Sunting endpoint',
+    title: isEdit ? 'Sunting endpoint' : 'Tambah endpoint',
     body: `
       <div class="field">
         <label class="field__label" for="epEditUrl">Base URL</label>
-        <input id="epEditUrl" class="input" type="text" value="${escapeAttr(p.baseUrl)}" autocomplete="off" spellcheck="false" />
+        <input id="epEditUrl" class="input" type="text" value="${escapeAttr(isEdit ? p.baseUrl : '')}" placeholder="http://127.0.0.1:1234" autocomplete="off" spellcheck="false" />
       </div>
       <div class="field">
         <label class="field__label" for="epEditName">Nama endpoint (opsional)</label>
-        <input id="epEditName" class="input" type="text" value="${escapeAttr(p.name)}" autocomplete="off" spellcheck="false" />
+        <input id="epEditName" class="input" type="text" value="${escapeAttr(isEdit ? p.name : '')}" autocomplete="off" spellcheck="false" />
       </div>
       <div class="field">
         <label class="field__label" for="epEditKey">Kunci API</label>
         <div class="endpoint-edit__keyrow">
-          <input id="epEditKey" class="input endpoint-edit__key" type="password" value="${escapeAttr(p.key || '')}" autocomplete="off" spellcheck="false" />
+          <input id="epEditKey" class="input endpoint-edit__key" type="password" value="${escapeAttr(isEdit ? p.key || '' : '')}" placeholder="Kunci API (opsional)" autocomplete="off" spellcheck="false" />
           <button id="epEditKeyToggle" class="btn btn--ghost btn--sm" type="button" aria-label="Tampilkan/sembunyikan kunci">${EYE}</button>
         </div>
+        <p class="field__hint">Kunci disimpan di browser ini dan dipakai khusus untuk endpoint tersebut. Kunci kosong = tanpa header auth (endpoint lokal seperti LM Studio).</p>
       </div>
     `,
     actions: [
       { label: 'Batal', kind: 'secondary', onClick: () => modalRef.close() },
       {
-        label: 'Simpan perubahan',
+        label: isEdit ? 'Simpan perubahan' : 'Tambah endpoint',
         kind: 'primary',
         primary: true,
         keepOpen: true,
-        onClick: () => saveEndpoint(id, modal),
+        onClick: () => saveEndpoint(isEdit ? id : null, modal),
       },
     ],
   });
@@ -415,15 +395,15 @@ function editEndpoint(id) {
       return;
     }
     try {
-      await connectEndpoint({ baseUrl, name, key, providerId: editId });
+      await connectEndpoint({ baseUrl, name, key, providerId: editId || undefined });
       modalRef.close();
     } catch (err) {
-      showToast((err && err.message) || 'Gagal menyimpan endpoint.', 'error');
+      showToast((err && err.message) || (editId ? 'Gagal menyimpan endpoint.' : 'Gagal menambahkan endpoint.'), 'error');
     }
   }
 }
 
-// Konfirmasi hapus endpoint; setelah hapus, form sunting (kalau terbuka) reset.
+// Konfirmasi hapus endpoint.
 function deleteEndpointConfirm(id) {
   const p = currentProviders()[id];
   showConfirm({
@@ -432,7 +412,6 @@ function deleteEndpointConfirm(id) {
     confirmLabel: 'Ya, hapus',
     kind: 'danger',
     onConfirm: async () => {
-      if (editingProviderId === id) clearEndpointEdit();
       await deleteProvider(id);
     },
   });
@@ -1691,22 +1670,11 @@ function bindEvents() {
     renderProviderOptions();
     refreshProviderModelList();
   });
-  dom.addCustomProvider.addEventListener('click', () => {
-    connectEndpoint({
-      baseUrl: dom.customBaseUrl.value.trim(),
-      name: dom.customProviderName.value.trim(),
-      key: dom.customProviderKey.value.trim(),
-      providerId: editingProviderId || undefined,
-    }).catch((err) => showToast((err && err.message) || 'Gagal menghubungkan endpoint.', 'error'));
-  });
-
-  // Toggle show/hide kunci endpoint yang sedang diketik di form.
-  dom.providerKeyToggle.addEventListener('click', () => {
-    const show = dom.customProviderKey.type === 'password';
-    dom.customProviderKey.type = show ? 'text' : 'password';
-    dom.providerKeyToggle.setAttribute('aria-label', show ? 'Sembunyikan kunci' : 'Tampilkan kunci');
-    dom.providerKeyToggle.innerHTML = show ? EYE_OFF : EYE;
-  });
+  // Daftar endpoint: tombol "Tambah endpoint" membuka modal pop-up
+  // (satu-satunya jalur tambah di Pengaturan; tidak ada form inline).
+  if (dom.addEndpointBtn) {
+    dom.addEndpointBtn.addEventListener('click', () => openEndpointModal());
+  }
 
   // Daftar endpoint: toggle kunci + Sunting/Hapus (delegasi sekali, aman
   // meski daftar di-render ulang).
@@ -1722,7 +1690,7 @@ function bindEvents() {
       e.target.closest('.provider-item__toggle').innerHTML = shown ? EYE_OFF : EYE;
       return;
     }
-    if (e.target.closest('.provider-item__edit')) editEndpoint(id);
+    if (e.target.closest('.provider-item__edit')) openEndpointModal(id);
     else if (e.target.closest('.provider-item__delete')) deleteEndpointConfirm(id);
   });
 

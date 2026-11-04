@@ -441,14 +441,27 @@
   height: 16px;
 }
 
-/* Daftar endpoint di drawer Pengaturan (sunting/hapus per baris) */
+/* Daftar endpoint di drawer Pengaturan (tambah/sunting/hapus) */
 .provider-list {
   list-style: none;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  margin-top: var(--space-3);
+  margin-top: 0;
   padding: 0;
+}
+.provider-list__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.provider-list__title {
+  font-size: var(--text-secondary);
+  font-weight: 500;
+  color: var(--color-text);
 }
 
 .provider-item {

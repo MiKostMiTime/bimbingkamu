@@ -172,22 +172,10 @@
           <select id="modelSelect" class="select"></select>
           <p class="field__hint">Daftar model otomatis diambil dari endpoint terpilih.</p>
         </div>
-        <div class="field">
-          <input id="customBaseUrl" class="input" type="text" placeholder="http://127.0.0.1:1234" autocomplete="off" spellcheck="false" />
-          <input id="customProviderName" class="input" type="text" placeholder="Nama endpoint (opsional)" autocomplete="off" style="margin-top:var(--space-2)" />
-          <div class="input-wrap" style="margin-top:var(--space-2)">
-            <input id="customProviderKey" class="input" type="password" placeholder="Kunci API endpoint (opsional)" autocomplete="off" />
-            <button id="providerKeyToggle" class="input-wrap__btn" type="button" aria-label="Tampilkan kunci">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-            </button>
-          </div>
-          <button id="addCustomProvider" class="btn btn--ghost btn--sm" type="button" style="margin-top:var(--space-2)">Hubungkan endpoint</button>
-          <p class="field__hint">Kunci disimpan di browser ini dan dipakai khusus untuk endpoint tersebut. Kunci kosong = tanpa header auth (endpoint lokal seperti LM Studio).</p>
+        <div class="provider-list__bar">
+          <span class="provider-list__title">Endpoint terdaftar</span>
+          <button id="addEndpointBtn" class="btn btn--ghost btn--sm" type="button">Tambah endpoint</button>
         </div>
-        <!-- DAFTAR ENDPOINT TERDAFTAR + SUNTING/HAPUS -->
         <ul id="providerList" class="provider-list" aria-label="Endpoint terdaftar"></ul>
       </section>
 
