@@ -286,6 +286,7 @@ export function addUserMessageWithEdit(root, text, { onEdit, onDelete } = {}) {
       batal.textContent = 'Batal';
       const closeEditor = () => {
         content.textContent = content.dataset.original;
+        msg.classList.remove('is-actions-open'); // kembalikan visibilitas ikuti hover
         if (bar.parentElement) buildPill(); // kembalikan bar ikon
       };
       simpan.addEventListener('click', async () => {

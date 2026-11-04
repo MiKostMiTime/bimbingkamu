@@ -116,34 +116,28 @@
   flex: none;
 }
 
-/* ===== AKSI Balasan & Pertanyaan (pill hover ala Gemini) ===== */
+/* ===== AKSI Balasan & Pertanyaan (toolbar flat di bawah bubble) ===== */
+/* Bar aksi kini toolbar biasa di BAWAH bubble (bukan pill absolut yang menimpa
+   bubble) — rata kiri untuk balasan AI, rata kanan untuk pertanyaan user. */
 /* Ditaruh SETELAH blok .btn agar selector .msg__action (spesifisitas sama dengan
    .btn/*.btn--*) menang lewat urutan sumber. Tombol tetap memakai kelas .btn/*
-   untuk konsistensi, tapi tampilan "pill" yang mendominasi. */
+   untuk konsistensi, tapi tampilan ikon flat yang mendominasi. */
 .msg__actions {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
-  position: absolute;
-  bottom: var(--space-1);
-  padding: var(--space-1);
-  border-radius: 999px;
-  box-shadow: var(--shadow-pop);
-  z-index: 2;
+  gap: var(--space-2);
+  width: 100%;
+  margin-top: var(--space-1);
 }
 
-/* Balasan AI: bubble rata kiri → pill di sudut kiri bawah. */
+/* Balasan AI: bubble rata kiri → toolbar ikut rata kiri. */
 .msg--model .msg__actions {
-  left: var(--space-2);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  justify-content: flex-start;
 }
 
-/* Pertanyaan user: bubble kanan → pill di sudut kanan bawah. */
+/* Pertanyaan user: bubble rata kanan → toolbar ikut rata kanan. */
 .msg--user .msg__actions {
-  right: var(--space-2);
-  background: #fff;
-  border: 1px solid var(--color-border);
+  justify-content: flex-end;
 }
 
 .msg__action {
@@ -198,17 +192,26 @@
 @media (hover: hover) and (pointer: fine) {
   .msg__actions {
     opacity: 0;
-    transform: translateY(4px);
+    visibility: hidden;
+    height: 0;
+    margin-top: 0;
+    overflow: hidden;
     pointer-events: none;
-    transition: opacity var(--transition), transform var(--transition);
+    transition: opacity var(--transition), transform var(--transition),
+      height var(--transition), margin-top var(--transition), visibility 0s linear var(--transition);
   }
 
   .msg:hover > .msg__col .msg__actions,
-  .msg__actions.is-actions-open,
+  .msg.is-actions-open .msg__actions,
   .msg__actions:focus-within {
     opacity: 1;
-    transform: translateY(0);
+    visibility: visible;
+    height: auto;
+    margin-top: var(--space-1);
     pointer-events: auto;
+    transform: translateY(0);
+    transition: opacity var(--transition), transform var(--transition),
+      height var(--transition), margin-top var(--transition), visibility 0s;
   }
 }
 
@@ -221,9 +224,9 @@
   }
 }
 
-/* Editor inline (Sunting pertanyaan): textarea yang menggantikan isi bubble
-   saat disunting. Tampil sebagai blok penuh di dalam bubble, font selaras teks,
-   border + fokus jelas, tinggi cukup untuk mengedit tanpa scroll berlebihan. */
+/* Editor inline (Sunting pertanyaan): textarea meniru kotak input composer utama.
+   Klasifikasi perilaku cukup persis: resize nonaktif + max-height, borderless di
+   dalam bubble, fokus = border accent + ring soft. */
 .msg__edit {
   display: block;
   width: 100%;
@@ -232,12 +235,13 @@
   padding: var(--space-2) var(--space-3);
   font-family: inherit;
   font-size: var(--text-body);
-  line-height: 1.6;
+  line-height: 1.5;
   color: var(--color-text);
-  background: var(--color-surface-2);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  resize: vertical;
+  border-radius: var(--radius-md);
+  resize: none;
+  max-height: 160px;
   outline: none;
   transition: border-color var(--transition), box-shadow var(--transition);
 }
@@ -778,8 +782,10 @@
   align-items: flex-start;
 }
 
+/* Avatar user di KANAN bubble: row-reverse membalik urutan DOM (avatar→kolom)
+   menjadi kolom→avatar, dan kelompok pesan tetap menempel di tepi kanan. */
 .msg--user {
-  justify-content: flex-end;
+  flex-direction: row-reverse;
 }
 
 .msg__avatar {
