@@ -84,7 +84,14 @@ function mathToNode(tex, display) {
   el.className = 'math';
   if (display) el.classList.add('math--display');
   if (katexRef) {
-    katexRef.render(tex, el, { displayMode: display, throwOnError: false });
+    try {
+      // throwOnError: true → kami yang mengendalikan fallback (blok raw rapi),
+      // bukan KaTeX menyisakan teks mentah di tengah paragraf bila rumus rusak.
+      katexRef.render(tex, el, { displayMode: display, throwOnError: true });
+    } catch (err) {
+      el.classList.add('math--error');
+      el.textContent = display ? `\\[${tex}\\]` : `$${tex}$`;
+    }
   } else {
     el.classList.add('math--raw');
     el.textContent = display ? `\\[${tex}\\]` : `$${tex}$`;
@@ -190,14 +197,53 @@ export function addUserMessage(root, text) {
   return msg;
 }
 
-// Ikon pensil untuk tombol "Sunting" (edit) di bubble user.
-const EDIT_ICON =
+// Ikon pensil untuk "Sunting" (edit).
+export const EDIT_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 
-// Bubble user dengan tombol "Sunting". Klik → ganti teks dengan textarea inline
-// + bar Simpan/Batal. Saat Simpan, panggil onEdit(newText). editIdx ditangkap
-// caller (app.js) lewat closure; chat.js hanya perlu membarui tampilan teks bubble.
-export function addUserMessageWithEdit(root, text, { onEdit } = {}) {
+// Ikon salin & hapus untuk bar aksi pesan.
+export const COPY_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+export const DELETE_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M6 7v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7"/><path d="M9 7V4h6v3"/><path d="M9 11v6M15 11v6"/></svg>';
+
+// Bar aksi hover (icon-only) untuk bubble pesan. `items`: [{ icon, label, onClick, disabled?, stopClose? }].
+// Dipakai ulang tiap rebuild (re-render) sehingga aksi selalu sinkron dengan state.
+// Ketok tombol menutup bar (toggle di .msg) kecuali stopClose = false (mis. editor).
+export function addActionbar(col, { items = [], role = 'model' } = {}) {
+  let bar = col.querySelector('.msg__actions');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.className = 'msg__actions';
+    bar.setAttribute('role', 'toolbar');
+    bar.setAttribute('aria-label', role === 'user' ? 'Aksi pertanyaan' : 'Aksi balasan tutor');
+    col.appendChild(bar);
+  }
+  bar.innerHTML = '';
+  for (const it of items) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'msg__action btn btn--ghost btn--icon btn--sm';
+    btn.setAttribute('aria-label', it.label);
+    if (it.tooltip) btn.title = it.tooltip;
+    if (it.disabled) btn.disabled = true;
+    btn.innerHTML = it.icon;
+    if (typeof it.onClick === 'function') {
+      btn.addEventListener('click', (e) => {
+        if (it.stopClose !== false && e && e.stopPropagation) e.stopPropagation();
+        it.onClick();
+      });
+    }
+    bar.appendChild(btn);
+  }
+  return bar;
+}
+
+// Bubble user dengan bar aksi: ikon "Sunting" (+ "Hapus" bila onEdit/onDelete ada).
+// Klik Sunting → ganti teks dengan textarea inline + bar Simpan/Batal. Saat Simpan,
+// panggil onEdit(newText). editIdx ditangkap caller (app.js) lewat closure; chat.js
+// hanya perlu membarui tampilan teks bubble.
+export function addUserMessageWithEdit(root, text, { onEdit, onDelete } = {}) {
   removeEmptyState(root);
   const msg = document.createElement('div');
   msg.className = 'msg msg--user';
@@ -206,9 +252,20 @@ export function addUserMessageWithEdit(root, text, { onEdit } = {}) {
   content.textContent = text;
   content.dataset.original = text;
 
-  if (typeof onEdit === 'function') {
-    const openEditor = () => {
-      // Ganti isi bubble dengan textarea + bar aksi.
+  if (typeof onEdit === 'function' || typeof onDelete === 'function') {
+    function buildPill() {
+      const items = [];
+      if (typeof onEdit === 'function') {
+        items.push({ icon: EDIT_ICON, label: 'Sunting pertanyaan', onClick: openEditor });
+      }
+      if (typeof onDelete === 'function') {
+        items.push({ icon: DELETE_ICON, label: 'Hapus pertanyaan', onClick: onDelete });
+      }
+      return addActionbar(col, { items, role: 'user' });
+    }
+
+    function openEditor() {
+      msg.classList.add('is-actions-open'); // pastikan bar tampil di mobile (tanpa hover)
       content.textContent = '';
       const ta = document.createElement('textarea');
       ta.className = 'msg__edit';
@@ -216,13 +273,8 @@ export function addUserMessageWithEdit(root, text, { onEdit } = {}) {
       content.appendChild(ta);
       ta.focus();
       ta.select();
-      // Hapus bar lama, buat bar aksi (Sunting & regenerasi / Batal).
-      let bar = col.querySelector('.msg__actions');
-      if (!bar) {
-        bar = document.createElement('div');
-        bar.className = 'msg__actions';
-        col.appendChild(bar);
-      }
+      // Ganti bar ikon dengan bar editor (Sunting & regenerasi / Batal).
+      const bar = col.querySelector('.msg__actions');
       bar.innerHTML = '';
       const simpan = document.createElement('button');
       simpan.type = 'button';
@@ -234,7 +286,7 @@ export function addUserMessageWithEdit(root, text, { onEdit } = {}) {
       batal.textContent = 'Batal';
       const closeEditor = () => {
         content.textContent = content.dataset.original;
-        if (bar.parentElement) bar.remove();
+        if (bar.parentElement) buildPill(); // kembalikan bar ikon
       };
       simpan.addEventListener('click', async () => {
         const newText = ta.value.trim();
@@ -246,14 +298,9 @@ export function addUserMessageWithEdit(root, text, { onEdit } = {}) {
       batal.addEventListener('click', closeEditor);
       bar.appendChild(simpan);
       bar.appendChild(batal);
-    };
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'msg__action btn btn--ghost btn--sm';
-    btn.setAttribute('aria-label', 'Sunting pertanyaan');
-    btn.innerHTML = EDIT_ICON;
-    btn.addEventListener('click', openEditor);
-    col.appendChild(btn);
+    }
+
+    buildPill();
   }
   msg.appendChild(col);
   root.appendChild(msg);
@@ -411,7 +458,7 @@ export function renderSources(msg, sources, { onSave } = {}) {
 
 // ===== TOMBOL REGENERASI (REDO) =====
 // Tombol aksi di footer bubble model untuk meregenerasi balasan terakhir.
-const REDO_ICON =
+export const REDO_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>';
 
 export function addRedoButton(col, onRedo) {

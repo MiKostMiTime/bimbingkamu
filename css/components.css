@@ -116,6 +116,128 @@
   flex: none;
 }
 
+/* ===== AKSI Balasan & Pertanyaan (pill hover ala Gemini) ===== */
+/* Ditaruh SETELAH blok .btn agar selector .msg__action (spesifisitas sama dengan
+   .btn/*.btn--*) menang lewat urutan sumber. Tombol tetap memakai kelas .btn/*
+   untuk konsistensi, tapi tampilan "pill" yang mendominasi. */
+.msg__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  position: absolute;
+  bottom: var(--space-1);
+  padding: var(--space-1);
+  border-radius: 999px;
+  box-shadow: var(--shadow-pop);
+  z-index: 2;
+}
+
+/* Balasan AI: bubble rata kiri → pill di sudut kiri bawah. */
+.msg--model .msg__actions {
+  left: var(--space-2);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+/* Pertanyaan user: bubble kanan → pill di sudut kanan bawah. */
+.msg--user .msg__actions {
+  right: var(--space-2);
+  background: #fff;
+  border: 1px solid var(--color-border);
+}
+
+.msg__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition),
+    border-color var(--transition);
+}
+
+.msg__action svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.msg__action:hover:not(:disabled) {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  border-color: var(--color-accent-border);
+}
+
+.msg__action:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.msg__action[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Desktop (punya hover + pointer halus): sembunyikan, muncul saat hover bubble,
+  menu dibuka (.is-actions-open), atau fokus keyboard (:focus-within). */
+@media (hover: hover) and (pointer: fine) {
+  .msg__actions {
+    opacity: 0;
+    transform: translateY(4px);
+    pointer-events: none;
+    transition: opacity var(--transition), transform var(--transition);
+  }
+
+  .msg:hover > .msg__col .msg__actions,
+  .msg__actions.is-actions-open,
+  .msg__actions:focus-within {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+}
+
+/* Mobile (tanpa hover): selalu tampil. */
+@media (hover: none) and (pointer: coarse) {
+  .msg__actions {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+}
+
+/* Editor inline (Sunting pertanyaan): textarea yang menggantikan isi bubble
+   saat disunting. Tampil sebagai blok penuh di dalam bubble, font selaras teks,
+   border + fokus jelas, tinggi cukup untuk mengedit tanpa scroll berlebihan. */
+.msg__edit {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 3.5rem;
+  padding: var(--space-2) var(--space-3);
+  font-family: inherit;
+  font-size: var(--text-body);
+  line-height: 1.6;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.msg__edit:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
 /* ===== DROPZONE MATERI ===== */
 .dropzone {
   display: flex;
@@ -310,6 +432,130 @@
   height: 16px;
 }
 
+/* Daftar endpoint di drawer Pengaturan (sunting/hapus per baris) */
+.provider-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: 0;
+}
+
+.provider-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+}
+
+.provider-item__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.provider-item__name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.provider-item__badge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+.provider-item__url {
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.provider-item__keywrap {
+  position: relative;
+}
+
+.provider-item__key {
+  width: 100%;
+  height: 30px;
+  padding: 0 34px 0 var(--space-2);
+  font-family: var(--font-sans);
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.provider-item__key:focus {
+  outline: none;
+  border-color: var(--color-border-strong);
+}
+
+.provider-item__toggle {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.provider-item__toggle:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+
+.provider-item__toggle svg {
+  width: 15px;
+  height: 15px;
+}
+
+.provider-item__nokey {
+  font-size: var(--text-caption);
+  color: var(--color-text-faint);
+}
+
+.provider-item__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.provider-item__actions .btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.provider-list__empty {
+  font-size: var(--text-caption);
+  color: var(--color-text-faint);
+  padding: var(--space-2) 0;
+}
+
 /* Select dengan chevron */
 .select {
   appearance: none;
@@ -353,54 +599,6 @@
 .segmented__btn[aria-pressed="true"] {
   background: var(--color-surface);
   color: var(--color-text);
-  box-shadow: var(--shadow-pop);
-}
-
-/* ===== CONTOH PERTANYAAN (PROMPT STARTERS) ===== */
-.starters {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  /* Sejajar dengan kotak input: max-width +pusat sama dengan .composer__inner */
-  max-width: 860px;
-  margin: 0 auto;
-  padding: var(--space-2) 0 var(--space-3);
-  overflow-x: auto;
-  scroll-snap-type: x proximity;
-  -webkit-overflow-scrolling: touch;
-}
-/* Ruang di ujung agar chip terakhir tak menempel saat di-swipe */
-.starters::after {
-  content: '';
-  flex: 0 0 auto;
-  width: var(--space-2);
-}
-.starter__btn {
-  flex: 0 0 auto;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  font-size: var(--text-body);
-  font-weight: 500;
-  line-height: 1.2;
-  padding: 8px var(--space-3);
-  border-radius: 999px;
-  white-space: nowrap;
-  scroll-snap-align: start;
-  cursor: pointer;
-  transition: background var(--transition), color var(--transition),
-    border-color var(--transition), box-shadow var(--transition);
-}
-.starter__btn:hover {
-  border-color: var(--color-accent-border);
-  color: var(--color-text);
-}
-/* Status aktif: dukung aria-pressed (asli) dan is-active (konsisten dengan .segmented) */
-.starter__btn[aria-pressed="true"],
-.starter__btn.is-active {
-  background: var(--color-accent-soft);
-  border-color: var(--color-accent-border);
-  color: var(--color-accent-hover);
   box-shadow: var(--shadow-pop);
 }
 
@@ -586,6 +784,7 @@
 .msg__col {
   display: flex;
   flex-direction: column;
+  position: relative;
   min-width: 0;
   max-width: 82%;
 }
@@ -711,25 +910,45 @@
 }
 
 /* Rumus (KaTeX, dirender math.js) */
+/* Inline: ukuran relatif (1em) agar mengikuti fontSize induk, dan line-height
+   rapat supaya baseline tidak "loncat" di atas/bawah baris teks. */
 .msg__content .math {
-  font-size: 1.05em;
+  font-size: 1em;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
+/* Display math: lebar penuh (box-sizing border-box) agar pecahan/akbar tak
+   terpotong; scroll horizontal bila melebihi lebar kolom (mobile); margin rapi. */
 .msg__content .math--display {
   display: block;
-  width: fit-content;
-  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
   overflow-x: auto;
-  margin: var(--space-2) 0;
+  -webkit-overflow-scrolling: touch;
+  margin: var(--space-3) 0;
 }
 
-/* Fallback saat KaTeX belum termuat / offline: tex mentah */
+/* Fallback saat KaTeX belum termuat / offline: tex mentah rapi. */
 .msg__content .math--raw {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 0.85em;
   background: var(--color-surface-2);
-  border-radius: 4px;
-  padding: 0.1em 0.35em;
+  border-radius: var(--radius-sm);
+  padding: 0.15em 0.4em;
+}
+
+/* Rumus rusak (KaTeX render error): tampil sebagai catatan error, bukan pecahan
+   yang patah di tengah paragraf. */
+.msg__content .math--error {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  color: var(--color-error);
+  background: var(--color-error-soft);
+  border: 1px solid var(--color-error-border);
+  border-radius: var(--radius-sm);
+  padding: 0.15em 0.4em;
+  white-space: pre-wrap;
 }
 
 /* ===== CITATION CHIP + TOOLTIP ===== */
@@ -872,9 +1091,6 @@
   display: flex;
   align-items: flex-end;
   gap: var(--space-2);
-  /* Pemisah rapi antara baris starter dan kotak input */
-  border-top: 1px solid var(--color-border);
-  padding-top: var(--space-2);
 }
 
 .composer__input-wrap {
@@ -959,6 +1175,23 @@
 
 .modal__text + .modal__text {
   margin-top: var(--space-3);
+}
+
+.modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+}
+
+.endpoint-edit__keyrow {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.endpoint-edit__keyrow .input {
+  flex: 1;
 }
 
 .modal__actions {

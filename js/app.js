@@ -5,7 +5,7 @@
 import { STORAGE_KEYS, getLevelLabel, migrateLegacyProviderSettings } from './config.js';
 import { estimateCost, formatCostIDR, fetchUsdIdr, effectiveUsdIdr, cachedUsdIdr } from './pricing.js';
 import { storage } from './storage.js';
-import { resolveProviders, listModels, providerChat, probeEndpoint, fetchContextLimit, fetchModelPricing } from './providers.js';
+import { resolveProviders, listModels, providerChat, probeEndpoint, fetchContextLimit, fetchModelPricing, resolveApiKey, addProvider, updateProvider, removeProvider, nextActiveAfterDelete, DEFAULT_PROVIDERS } from './providers.js';
 import { needsSummarize, splitForSummary, summarySystemPrompt, summaryMessage, buildContentsFrom } from './summarize.js';
 import { selectRelevantParagraphs } from './rag.js';
 import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
@@ -20,10 +20,10 @@ import {
   migrateLegacy,
 } from './sessions.js';
 import {
-  addUserMessage,
   addUserMessageWithEdit,
   addModelMessage,
   addNotice,
+  addActionbar,
   showTyping,
   removeTyping,
   streamText,
@@ -33,7 +33,10 @@ import {
   scrollToEnd,
   renderRich,
   renderSources,
-  addRedoButton,
+  EDIT_ICON,
+  COPY_ICON,
+  DELETE_ICON,
+  REDO_ICON,
   setMateriProvider,
 } from './chat.js';
 import {
@@ -52,6 +55,18 @@ import {
 // ===== REFERENSI DOM =====
 const $ = (id) => document.getElementById(id);
 
+// Escape HTML untuk teks + atribut agar nama/URL/kunci endpoint aman disisipkan
+// ke innerHTML daftar endpoint tanpa risiko injeksi markup.
+function escapeHtml(text) {
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+function escapeAttr(text) {
+  return escapeHtml(text).replace(/"/g, '&quot;');
+}
+
 const dom = {
   sidebar: $('sidebar'),
   appShell: $('appShell'),
@@ -63,8 +78,6 @@ const dom = {
   settingsClose: $('settingsClose'),
   sessionList: $('sessionList'),
   newSessionBtn: $('newSessionBtn'),
-  apiKey: $('apiKeyInput'),
-  apiKeyToggle: $('apiKeyToggle'),
   materiDrop: $('materiDrop'),
   materiFile: $('materiFile'),
   materiCount: $('materiCount'),
@@ -79,12 +92,13 @@ const dom = {
   customBaseUrl: $('customBaseUrl'),
   customProviderName: $('customProviderName'),
   customProviderKey: $('customProviderKey'),
+  providerKeyToggle: $('providerKeyToggle'),
   addCustomProvider: $('addCustomProvider'),
+  providerList: $('providerList'),
   connStatus: $('headerConnStatus'),
   webSearchToggle: $('webSearchToggle'),
   toneSegment: $('toneSegment'),
   toneButtons: Array.from(document.querySelectorAll('#toneSegment .segmented__btn')),
-  starters: document.querySelectorAll('.starter__btn'),
   timer: $('timerValue'),
   turns: $('turnValue'),
   tokenTotal: $('tokenTotal'),
@@ -99,16 +113,9 @@ const dom = {
 // TIDAK ada provider/model bawaan — keduanya wajib dipilih dari endpoint
 // yang dihubungkan user (onboarding / drawer Pengaturan).
 // tone = derajat gaya bahasa (santai default; persona bawaan sudah santai).
-// starters = id chip prompt terakhir dipakai (highlight + urutan pertama saat load).
+// Catatan: `starters` (settings lama) tetap dibiarkan tersimpan agar tidak
+// merusak data pengguna, tetapi UI chip-nya sudah dihapus.
 const DEFAULT_SETTINGS = { mode: 'konsep', level: 3, model: '', webSearch: true, provider: '', providers: [], tone: 'santai', starters: 'uji', usdIdrManual: '' };
-
-// Isi input bila chip prompt starter diketok. “lainnya” → kosong (diketik manual).
-const STARTER_TEXT = {
-  uji: 'Buatku diuji dari materi — tanya aku bertahap sampai paham!',
-  jelasin: 'Jelasin bab ini tuntas: apa, mengapa, bagaimana, contoh.',
-  ringkasan: 'Ringkas materi jadi poin-poin yang mudah dihafal.',
-  latihan: 'Buatkan latihan soal + kunci jawaban dari materi.',
-};
 
 // Bersihkan jejak data lama (provider 'gemini', model gemini-*) agar
 // onboarding endpoint muncul lagi. Riwayat chat tidak disentuh.
@@ -149,24 +156,18 @@ function logApiError(err) {
 // Setelah endpoint dipilih/ditambahkan, tanyakan model apa yang bisa
 // dipakai endpoint itu (SELALU dari endpoint, bukan daftar hardcode),
 // lalu segarkan selector model di header chat.
-let modelRefreshTimer = null;
 
-function scheduleModelRefresh() {
-  if (modelRefreshTimer) clearTimeout(modelRefreshTimer);
-  modelRefreshTimer = setTimeout(() => {
-    modelRefreshTimer = null;
-    refreshProviderModelList();
-  }, 800);
-}
+// ID endpoint yang sedang disunting di drawer Pengaturan ('' = mode tambah).
+let editingProviderId = '';
 
 // Registry provider = endpoint terdaftar user (tanpa bawaan).
 function currentProviders() { return resolveProviders(state.settings.providers || []); }
 
-// Kunci aktif: kunci khusus endpoint → fallback kunci umum. Boleh kosong
-// (endpoint lokal tanpa auth → request tanpa header Authorization).
+// Kunci aktif: kunci khusus endpoint menang; bila kosong → fallback kunci umum
+// (legacy); bila tak ada apa-apa → ''. Endpoint lokal tanpa auth tetap ''
+// (request tanpa header Authorization).
 function activeApiKey() {
-  const p = currentProviders()[state.settings.provider];
-  return (p && p.key) || state.apiKey || '';
+  return resolveApiKey(currentProviders(), state.settings.provider, state.apiKey);
 }
 
 // Guard gabungan: endpoint + model harus terpilih sebelum chat.
@@ -239,39 +240,201 @@ function renderProviderOptions() {
     return;
   }
   dom.providerSelect.innerHTML = Object.values(providers)
-    .map((p) => `<option value="${p.id}" ${p.id === state.settings.provider ? 'selected' : ''}>${p.name}</option>`)
+    .map((p) => `<option value="${escapeAttr(p.id)}" ${p.id === state.settings.provider ? 'selected' : ''}>${escapeHtml(p.name)}</option>`)
     .join('');
 }
 
-// Hubungkan endpoint baru: probe /models vs /v1/models → simpan provider
-// (dengan path terverifikasi + kunci opsional) → pilih otomatis → ambil
-// daftar model. Return daftar id model (dipakai onboarding). Throw error
-// ramah bila endpoint tak merespons.
-async function connectEndpoint({ baseUrl, name, key }) {
+// Hubungkan endpoint baru / simpan perubahan endpoint lama: probe
+// /models vs /v1/models → simpan provider (path terverifikasi + kunci
+// opsional) → pilih otomatis → ambil daftar model. Return daftar id model
+// (dipakai onboarding). Throw error ramah bila endpoint tak merespons.
+async function connectEndpoint({ baseUrl, name, key, providerId }) {
   const { modelsPath, chatPath } = await probeEndpoint(baseUrl, key);
   const host = baseUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-  const id = 'ep-' + Math.random().toString(36).slice(2, 7);
+  // Mode edit: pakai id endpoint lama; mode tambah: buat id baru.
+  const id = providerId || 'ep-' + Math.random().toString(36).slice(2, 7);
+  // Pertahankan kapabilitas seed (Gemini grounding, thinking) saat disunting.
+  const existing = providerId ? currentProviders()[providerId] : null;
   const provider = {
     id,
-    name: name || host || baseUrl,
+    name: name || (existing && existing.name) || host || baseUrl,
     baseUrl: baseUrl.trim().replace(/\/+$/, ''),
     modelsPath,
     chatPath,
     key: key || '',
-    supportsGrounding: false,
-    supportsThinking: false,
+    supportsGrounding: Boolean(existing && existing.supportsGrounding),
+    supportsThinking: Boolean(existing && existing.supportsThinking),
     custom: true,
   };
-  state.settings.providers = [...(state.settings.providers || []), provider];
+  // Upsert: endpoint bawaan (OpenRouter/Gemini/OpenAI) belum ada di array
+  // settings.providers → sunting = tambahkan override dengan id yang sama.
+  const list = state.settings.providers || [];
+  const exists = list.some((p) => p.id === id);
+  state.settings.providers = exists
+    ? updateProvider(list, id, provider)
+    : addProvider(list, provider);
   state.settings.provider = id;
   persistSettings();
   renderProviderOptions();
   await refreshProviderModelList();
+  clearEndpointEdit();
+  renderEndpoints();
+  showToast(`Endpoint "${provider.name}" ${providerId ? 'disunting.' : 'terhubungkan.'}`, 'success');
+  return listModels(activeApiKey(), provider);
+}
+
+// Hapus endpoint terdaftar: endpoint custom dibuang dari array; endpoint
+// bawaan "dihapus" dengan override hidden agar tidak muncul lagi. Provider
+// aktif dipindah ke endpoint tersisa (nextActiveAfterDelete) lalu model
+// disegarkan.
+async function deleteProvider(id) {
+  const all = Object.values(currentProviders());
+  const next = nextActiveAfterDelete(all, state.settings.provider, id);
+  state.settings.providers = removeProvider(state.settings.providers || [], id);
+  state.settings.provider = next;
+  persistSettings();
+  renderProviderOptions();
+  renderEndpoints();
+  await refreshProviderModelList();
+}
+
+// ===== DAFTAR ENDPOINT DI DRAWER PENGATURAN =====
+// Render semua endpoint terdaftar (bawaan + custom) dengan tombol
+// Sunting/Hapus. Klik ditangani sekali di bindEvents (delegasi).
+function renderEndpoints() {
+  const providers = Object.values(currentProviders());
+  if (!providers.length) {
+    dom.providerList.innerHTML =
+      '<li class="provider-list__empty">Belum ada endpoint terdaftar.</li>';
+    return;
+  }
+  dom.providerList.innerHTML = providers
+    .map((p) => {
+      const isSeed = Boolean(DEFAULT_PROVIDERS[p.id]);
+      const keyBlock = p.key
+        ? `<div class="provider-item__keywrap">
+             <input class="provider-item__key" type="password" value="${escapeAttr(p.key)}" readonly aria-label="Kunci API ${escapeAttr(p.name)}" />
+             <button class="provider-item__toggle" type="button" title="Tampilkan/sembunyikan kunci" aria-label="Tampilkan/sembunyikan kunci">${EYE}</button>
+           </div>`
+        : '<span class="provider-item__nokey">Belum ada kunci</span>';
+      return `
+      <li class="provider-item" data-id="${escapeAttr(p.id)}">
+        <div class="provider-item__main">
+          <span class="provider-item__name">
+            ${escapeHtml(p.name)}
+            ${isSeed ? '<span class="provider-item__badge">Bawaan</span>' : ''}
+          </span>
+          <span class="provider-item__url">${escapeHtml(p.baseUrl)}</span>
+        </div>
+        ${keyBlock}
+        <div class="provider-item__actions">
+          <button class="btn btn--ghost btn--sm provider-item__edit" type="button">Sunting</button>
+          <button class="btn btn--ghost btn--sm provider-item__delete" type="button">${TRASH_ICON} Hapus</button>
+        </div>
+      </li>`;
+    })
+    .join('');
+}
+
+// Kembalikan form ke mode tambah (kosong + label asli).
+function clearEndpointEdit() {
   dom.customBaseUrl.value = '';
   dom.customProviderName.value = '';
   dom.customProviderKey.value = '';
-  showToast(`Endpoint "${provider.name}" terhubung.`, 'success');
-  return listModels(activeApiKey(), provider);
+  dom.customProviderKey.type = 'password';
+  if (dom.providerKeyToggle) {
+    dom.providerKeyToggle.innerHTML = EYE;
+    dom.providerKeyToggle.setAttribute('aria-label', 'Tampilkan kunci');
+  }
+  editingProviderId = '';
+  dom.addCustomProvider.textContent = 'Hubungkan endpoint';
+}
+
+// Buka modal pop-up untuk menyunting endpoint (Base URL, nama, kunci).
+// Mengganggu form atas seminimal mungkin; simpan memanggil connectEndpoint()
+// dengan providerId sehingga mode edit memakai id yang sama + kapabilitas
+// seed (Gemini grounding / thinking) tetap terjaga.
+function editEndpoint(id) {
+  const p = currentProviders()[id];
+  if (!p) return;
+
+  const modalRef = showModal({
+    title: 'Sunting endpoint',
+    body: `
+      <div class="field">
+        <label class="field__label" for="epEditUrl">Base URL</label>
+        <input id="epEditUrl" class="input" type="text" value="${escapeAttr(p.baseUrl)}" autocomplete="off" spellcheck="false" />
+      </div>
+      <div class="field">
+        <label class="field__label" for="epEditName">Nama endpoint (opsional)</label>
+        <input id="epEditName" class="input" type="text" value="${escapeAttr(p.name)}" autocomplete="off" spellcheck="false" />
+      </div>
+      <div class="field">
+        <label class="field__label" for="epEditKey">Kunci API</label>
+        <div class="endpoint-edit__keyrow">
+          <input id="epEditKey" class="input endpoint-edit__key" type="password" value="${escapeAttr(p.key || '')}" autocomplete="off" spellcheck="false" />
+          <button id="epEditKeyToggle" class="btn btn--ghost btn--sm" type="button" aria-label="Tampilkan/sembunyikan kunci">${EYE}</button>
+        </div>
+      </div>
+    `,
+    actions: [
+      { label: 'Batal', kind: 'secondary', onClick: () => modalRef.close() },
+      {
+        label: 'Simpan perubahan',
+        kind: 'primary',
+        primary: true,
+        keepOpen: true,
+        onClick: () => saveEndpoint(id, modal),
+      },
+    ],
+  });
+  const modal = modalRef.modal;
+
+  // Toggle tampilkan/sembunyikan kunci di dalam modal.
+  const keyInput = modal.querySelector('#epEditKey');
+  const keyToggle = modal.querySelector('#epEditKeyToggle');
+  keyToggle.addEventListener('click', () => {
+    const show = keyInput.type === 'password';
+    keyInput.type = show ? 'text' : 'password';
+    keyToggle.innerHTML = show ? EYE_OFF : EYE;
+    keyToggle.setAttribute('aria-label', show ? 'Sembunyikan kunci' : 'Tampilkan kunci');
+  });
+
+  // Fokus ke URL + pilih semua saat modal terbuka.
+  const urlInput = modal.querySelector('#epEditUrl');
+  urlInput.focus();
+  if (typeof urlInput.select === 'function') urlInput.select();
+
+  async function saveEndpoint(editId, editModal) {
+    const baseUrl = editModal.querySelector('#epEditUrl').value.trim();
+    const name = editModal.querySelector('#epEditName').value.trim();
+    const key = editModal.querySelector('#epEditKey').value.trim();
+    if (!baseUrl) {
+      showToast('Masukkan URL endpoint dulu.', 'error');
+      return;
+    }
+    try {
+      await connectEndpoint({ baseUrl, name, key, providerId: editId });
+      modalRef.close();
+    } catch (err) {
+      showToast((err && err.message) || 'Gagal menyimpan endpoint.', 'error');
+    }
+  }
+}
+
+// Konfirmasi hapus endpoint; setelah hapus, form sunting (kalau terbuka) reset.
+function deleteEndpointConfirm(id) {
+  const p = currentProviders()[id];
+  showConfirm({
+    title: 'Hapus endpoint?',
+    text: `"${(p && p.name) || id}" akan dihapus dari daftar endpoint. Riwayat chat yang sudah ada tidak ikut terhapus.`,
+    confirmLabel: 'Ya, hapus',
+    kind: 'danger',
+    onConfirm: async () => {
+      if (editingProviderId === id) clearEndpointEdit();
+      await deleteProvider(id);
+    },
+  });
 }
 
 // ===== BANTUAN SESI =====
@@ -583,17 +746,134 @@ function loadSession(id) {
   if (isMobile()) closeSidebar();
 }
 
+// ===== AKSI BUBBLE (pill hover ala Gemini) =====
+// Jejak index state pada bubble model agar bar aksi bisa dipeta balik ke
+// state.messages meski ada pesan 'hidden' yang tidak dirender.
+function stampModelBubble(msg, idx) {
+  if (!msg) return;
+  msg.dataset.tbState = String(idx ?? state.messages.length - 1);
+}
+
+// Pemetaan index model → index pertanyaan asal (user non-hidden terdekat di
+// depannya). Digunakan untuk "Sunting" pada bubble tutor.
+function originatingUserIndex(modelIdx) {
+  for (let i = modelIdx - 1; i >= 0; i--) {
+    const m = state.messages[i];
+    if (m.role === 'user' && !m.hidden) return i;
+  }
+  return -1;
+}
+
+// Bangun bubble user lengkap dengan bar aksi (Sunting & regenerasi / Hapus).
+// Dipakai di semua jalur agar tombol sunting konsisten: ketik, restore, edit.
+function buildUserBubble(idx) {
+  const msg = state.messages[idx];
+  if (!msg) return null;
+  const userEl = addUserMessageWithEdit(dom.messages, msg.label || msg.text, {
+    onEdit: async (newText) => {
+      // Barui teks user di state + bubble, lalu regenerasi ke belakang.
+      if (state.messages[idx]) state.messages[idx].text = newText;
+      await regenerateFrom(idx);
+    },
+    onDelete: () => deleteUserMessage(idx),
+  });
+  if (userEl) userEl.dataset.tbState = idx;
+  return userEl;
+}
+
+// Bangun bar aksi bubble model: Regenerasi · Salin · Sunting · Hapus.
+function buildModelActions(col, msgEl) {
+  const modelIdx = Number(msgEl.dataset.tbState);
+  const originIdx = originatingUserIndex(modelIdx);
+  const canEdit = originIdx >= 0; // ada pertanyaan asal → bisa sunting & regenerasi
+  addActionbar(col, {
+    role: 'model',
+    items: [
+      { icon: REDO_ICON, label: 'Regenerasi balasan tutor', onClick: regenerateLast },
+      { icon: COPY_ICON, label: 'Salin balasan', onClick: () => copyModelMessage(modelIdx) },
+      canEdit
+        ? { icon: EDIT_ICON, label: 'Sunting pertanyaan & regenerasi', onClick: () => editFromModel(modelIdx, originIdx) }
+        : null,
+      { icon: DELETE_ICON, label: 'Hapus balasan', onClick: () => deleteModelMessage(modelIdx) },
+    ].filter(Boolean),
+  });
+}
+
+// Salin teks balasan model ke clipboard + notifikasi.
+async function copyModelMessage(idx) {
+  const msg = state.messages[idx];
+  if (!msg) return;
+  try {
+    await navigator.clipboard.writeText(msg.text || '');
+    showToast('Balasan salin.', 'success');
+  } catch {
+    showToast('Gagal menyalin balasan.', 'error');
+  }
+}
+
+// Sunting pertanyaan asal balasan model → editor inline → regenerasi dari sana.
+async function editFromModel(modelIdx, originIdx) {
+  if (!hasActiveChatTarget()) return;
+  const el = dom.messages.querySelector(
+    `.msg--user[data-tb-state="${originIdx}"] .msg__action[aria-label="Sunting pertanyaan"]`
+  );
+  if (el) {
+    el.click(); // buka editor inline pertanyaan asal → Simpan = regenerasi dari sana
+  } else {
+    await regenerateFrom(originIdx); // fallback: langsung regenerasi bila bubble tak ditemukan
+  }
+}
+
+// Hapus balasan model tunggal + render ulang seluruh state agar index sinkron.
+async function deleteModelMessage(idx) {
+  if (state.busy) { showToast('Tunggu balasan tutor selesai dulu, ya.', 'info'); return; }
+  await showConfirm({
+    title: 'Hapus balasan?',
+    text: 'Balasan ini dihapus dari riwayat. Pertanyaan tetap disimpan.',
+    confirmLabel: 'Hapus',
+    kind: 'danger',
+    onConfirm: () => {
+      state.messages.splice(idx, 1);
+      renderMessagesFromState();
+      scrollToEnd(dom.chatScroll, true);
+      updateStats();
+      saveActiveSession();
+    },
+  });
+}
+
+// Hapus pertanyaan user + semua balasan model setelahnya (regenerasi ke belakang).
+async function deleteUserMessage(idx) {
+  if (state.busy) { showToast('Tunggu balasan tutor selesai dulu, ya.', 'info'); return; }
+  await showConfirm({
+    title: 'Hapus pertanyaan?',
+    text: 'Pertanyaan dan semua balasan setelahnya dihapus dari riwayat.',
+    confirmLabel: 'Hapus',
+    kind: 'danger',
+    onConfirm: () => {
+      // Hapus mulai dari user (idx) sampai akhir, agar balasan model yang "menganggur" ikut terbuang.
+      state.messages.splice(idx);
+      renderMessagesFromState();
+      scrollToEnd(dom.chatScroll, true);
+      updateStats();
+      saveActiveSession();
+    },
+  });
+}
+
 // Render ulang seluruh isi state ke DOM (muat-sesi & restore).
 function renderMessagesFromState() {
-  for (const m of state.messages) {
+  for (let i = 0; i < state.messages.length; i++) {
+    const m = state.messages[i];
     if (m.hidden) continue;
     if (m.role === 'user') {
-      addUserMessage(dom.messages, m.label || m.text);
+      buildUserBubble(i);
     } else if (m.role === 'model') {
-      const { msg, content, col } = addModelMessage(dom.messages);
-      renderRich(content, m.text);
-      renderSources(msg, m.sources, { onSave: () => saveWebMateri(m.sources) });
-      addRedoButton(col, regenerateLast);
+      const built = addModelMessage(dom.messages);
+      renderRich(built.content, m.text);
+      renderSources(built.msg, m.sources, { onSave: () => saveWebMateri(m.sources) });
+      stampModelBubble(built.msg, i);
+      buildModelActions(built.col, built.msg);
     } else {
       addNotice(dom.messages, m.text, m.role);
     }
@@ -619,14 +899,14 @@ function startFreshSession() {
   updateStats();
   updateComposer();
 
-  if (state.apiKey && buildMateri()) {
+  if (hasActiveChatTarget() && buildMateri()) {
     generateGreeting();
     return;
   }
   if (!buildMateri()) {
     addNotice(dom.messages, 'Isi materi di Pengaturan (tombol gear, kanan atas) dulu, ya. Tutor butuh bahan untuk membimbingmu.', 'system');
   } else {
-    addNotice(dom.messages, 'Masukkan kunci API di Pengaturan (tombol gear, kanan atas) dulu, ya.', 'system');
+    addNotice(dom.messages, 'Pilih endpoint dan model di Pengaturan (tombol gear, kanan atas) dulu, ya.', 'system');
   }
   saveActiveSession();
 }
@@ -688,7 +968,7 @@ async function generateGreeting() {
     const opening = { role: 'user', text: buildOpeningPrompt(), hidden: true };
     removeTyping(typing);
     // Bubble dibuat sebelum await → token SSE mengalir langsung ke layar.
-    const built = addModelMessage(dom.messages);
+    built = addModelMessage(dom.messages);
     let streamed = false;
     const { text: replyText, tokens, sources } = await providerChat(state.settings.provider, {
       apiKey: activeApiKey(),
@@ -715,7 +995,8 @@ async function generateGreeting() {
     } else {
       streamReply(built.content, replyText, built.msg); // fallback: endpoint tanpa SSE
     }
-    addRedoButton(built.col, regenerateLast);
+    stampModelBubble(built.msg);
+    buildModelActions(built.col, built.msg);
   } catch (err) {
     removeTyping(typing);
     state.busy = false;
@@ -771,13 +1052,7 @@ async function sendUserMessage(rawText, opts = {}) {
   // Tangkap index user yang baru pushed; bubble hasil ketik langsung diberi
   // tombol "Sunting" (hanya ini yang bisa disunting — restore riwayat tetap plain).
   const editIdx = state.messages.length - 1;
-  const userEl = addUserMessageWithEdit(dom.messages, opts.label || text, {
-    onEdit: async (newText) => {
-      // Barui teks user di state + bubble, lalu regenerasi ke belakang.
-      if (state.messages[editIdx]) state.messages[editIdx].text = newText;
-      await regenerateFrom(editIdx);
-    },
-  });
+  buildUserBubble(editIdx);
   if (fromInput) {
     dom.input.value = '';
     autosizeInput();
@@ -825,7 +1100,8 @@ async function sendUserMessage(rawText, opts = {}) {
       streamReply(built.content, reply, built.msg); // fallback: endpoint tanpa SSE
     }
     renderSources(built.msg, sources, { onSave: () => saveWebMateri(sources) });
-    addRedoButton(built.col, regenerateLast);
+    stampModelBubble(built.msg);
+    buildModelActions(built.col, built.msg);
   } catch (err) {
     removeTyping(typing);
     state.busy = false;
@@ -885,7 +1161,8 @@ function rerenderModelMessage(idx) {
   const built = addModelMessage(dom.messages);
   renderRich(built.content, msg.text || '');
   renderSources(built.msg, msg.sources || [], { onSave: () => saveWebMateri(msg.sources || []) });
-  addRedoButton(built.col, regenerateLast);
+  stampModelBubble(built.msg, idx);
+  buildModelActions(built.col, built.msg);
 }
 
 // Regenerasi balasan model terakhir via planRedo → providerChat → rebuild bubble.
@@ -943,14 +1220,16 @@ async function regenerateLast() {
 // tombol "Regenerasi" Task 3), sehingga sunting pesan menjaga konsistensi UI.
 function rerenderModelMessagesFrom(startIdx) {
   clearMessages(dom.messages);
-  for (const m of state.messages) {
+  for (let i = 0; i < state.messages.length; i++) {
+    const m = state.messages[i];
     if (m.hidden) continue;
-    if (m.role === 'user') addUserMessage(dom.messages, m.label || m.text);
+    if (m.role === 'user') buildUserBubble(i);
     else if (m.role === 'model') {
       const built = addModelMessage(dom.messages);
       renderRich(built.content, m.text || '');
       renderSources(built.msg, m.sources || [], { onSave: () => saveWebMateri(m.sources || []) });
-      addRedoButton(built.col, regenerateLast);
+      stampModelBubble(built.msg, i);
+      buildModelActions(built.col, built.msg);
     } else addNotice(dom.messages, m.text, m.role);
   }
 }
@@ -1043,7 +1322,7 @@ function autosizeInput() {
 // ===== HIDRASI UI DARI STATE =====
 function hydrateSettings() {
   renderProviderOptions();
-  dom.apiKey.value = state.apiKey;
+  renderEndpoints();
   updateMateriCount();
   renderMateriFiles();
   dom.modeButtons.forEach((btn) => {
@@ -1055,12 +1334,6 @@ function hydrateSettings() {
   // Gaya bahasa (tone): Santai ↔ Formal.
   dom.toneButtons.forEach((btn) => {
     const active = btn.dataset.tone === state.settings.tone;
-    btn.setAttribute('aria-pressed', String(active));
-    btn.classList.toggle('is-active', active);
-  });
-  // Highlight chip prompt starter terakhir dipakai (default: uji).
-  dom.starters.forEach((btn) => {
-    const active = btn.dataset.starter === (state.settings.starters || 'uji');
     btn.setAttribute('aria-pressed', String(active));
     btn.classList.toggle('is-active', active);
   });
@@ -1403,14 +1676,6 @@ function hydrateSidebar() {
 
 // ===== EVENT BINDING =====
 function bindEvents() {
-  // BYOK
-  dom.apiKey.addEventListener('input', () => {
-    state.apiKey = dom.apiKey.value.trim();
-    storage.set(STORAGE_KEYS.apiKey, state.apiKey);
-    scheduleModelRefresh();
-    refreshEmptyState();
-  });
-
   // PROVIDER: ganti provider → segarkan dropdown model + render ulang opsi.
   dom.providerSelect.addEventListener('change', () => {
     state.settings.provider = dom.providerSelect.value;
@@ -1420,17 +1685,37 @@ function bindEvents() {
   });
   dom.addCustomProvider.addEventListener('click', () => {
     connectEndpoint({
-      baseUrl: dom.customBaseUrl.value,
+      baseUrl: dom.customBaseUrl.value.trim(),
       name: dom.customProviderName.value.trim(),
       key: dom.customProviderKey.value.trim(),
+      providerId: editingProviderId || undefined,
     }).catch((err) => showToast((err && err.message) || 'Gagal menghubungkan endpoint.', 'error'));
   });
 
-  dom.apiKeyToggle.addEventListener('click', () => {
-    const show = dom.apiKey.type === 'password';
-    dom.apiKey.type = show ? 'text' : 'password';
-    dom.apiKeyToggle.setAttribute('aria-label', show ? 'Sembunyikan kunci' : 'Tampilkan kunci');
-    dom.apiKeyToggle.innerHTML = show ? EYE_OFF : EYE;
+  // Toggle show/hide kunci endpoint yang sedang diketik di form.
+  dom.providerKeyToggle.addEventListener('click', () => {
+    const show = dom.customProviderKey.type === 'password';
+    dom.customProviderKey.type = show ? 'text' : 'password';
+    dom.providerKeyToggle.setAttribute('aria-label', show ? 'Sembunyikan kunci' : 'Tampilkan kunci');
+    dom.providerKeyToggle.innerHTML = show ? EYE_OFF : EYE;
+  });
+
+  // Daftar endpoint: toggle kunci + Sunting/Hapus (delegasi sekali, aman
+  // meski daftar di-render ulang).
+  dom.providerList.addEventListener('click', (e) => {
+    const li = e.target.closest('.provider-item');
+    if (!li) return;
+    const id = li.getAttribute('data-id');
+    if (e.target.closest('.provider-item__toggle')) {
+      const input = li.querySelector('.provider-item__key');
+      if (!input) return;
+      const shown = input.type === 'text';
+      input.type = shown ? 'password' : 'text';
+      e.target.closest('.provider-item__toggle').innerHTML = shown ? EYE_OFF : EYE;
+      return;
+    }
+    if (e.target.closest('.provider-item__edit')) editEndpoint(id);
+    else if (e.target.closest('.provider-item__delete')) deleteEndpointConfirm(id);
   });
 
   // Hapus semua data
@@ -1524,28 +1809,6 @@ function bindEvents() {
         b.setAttribute('aria-pressed', String(active));
         b.classList.toggle('is-active', active);
       });
-    });
-  });
-
-  // Prompt starters: ketok → isi input, autosize, fokus (biar diedet/kirim).
-  // “Lainnya” → kosong agar diketik manual. Chip terakhir-used disimpan.
-  dom.starters.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.settings.starters = btn.dataset.starter;
-      persistSettings();
-      dom.starters.forEach((b) => {
-        const active = b === btn;
-        b.setAttribute('aria-pressed', String(active));
-        b.classList.toggle('is-active', active);
-      });
-      if (btn.dataset.starter === 'lainnya') {
-        dom.input.focus();
-        return;
-      }
-      dom.input.value = STARTER_TEXT[btn.dataset.starter] || '';
-      autosizeInput();
-      updateComposer();
-      dom.input.focus();
     });
   });
 

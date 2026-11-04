@@ -124,14 +124,6 @@
         </div>
 
         <div class="composer">
-          <!-- Contoh pertanyaan (prompt starters): ketok → isi input, biar diedit/kirim -->
-          <div class="starters" role="group" aria-label="Contoh pertanyaan">
-            <button type="button" class="starter__btn" data-starter="uji" aria-pressed="true">🧪 Uji pemahaman</button>
-            <button type="button" class="starter__btn" data-starter="jelasin">📖 Jelasin bab ini</button>
-            <button type="button" class="starter__btn" data-starter="ringkasan">✍️ Ringkasan</button>
-            <button type="button" class="starter__btn" data-starter="latihan">📝 Latihan + kunci</button>
-            <button type="button" class="starter__btn" data-starter="lainnya">💬 Lainnya</button>
-          </div>
           <div class="composer__inner">
             <div class="composer__input-wrap">
               <textarea
@@ -165,43 +157,6 @@
         </button>
       </div>
 
-      <!-- BYOK -->
-      <section class="panel" aria-labelledby="panel-key-title">
-        <div class="panel__header">
-          <h2 class="panel__title" id="panel-key-title">Kunci API</h2>
-        </div>
-        <div class="field">
-          <label class="field__label" for="apiKeyInput">Kunci API umum (opsional)</label>
-          <div class="input-wrap">
-            <input
-              id="apiKeyInput"
-              class="input"
-              type="password"
-              placeholder="Kunci untuk endpoint yang butuh auth"
-              autocomplete="off"
-              spellcheck="false"
-            />
-            <button
-              id="apiKeyToggle"
-              class="input-wrap__btn"
-              type="button"
-              aria-label="Tampilkan kunci"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-            </button>
-          </div>
-          <p class="field__hint">
-            Kunci hanya tersimpan di browser ini, tidak dikirim ke server mana pun. Endpoint lokal biasanya tidak butuh kunci.
-          </p>
-          <button id="deleteAllBtn" class="btn btn--danger btn--sm" type="button">
-            Hapus semua data
-          </button>
-        </div>
-      </section>
-
       <!-- ENDPOINT & MODEL -->
       <section class="panel" aria-labelledby="panel-provider-title">
         <div class="panel__header">
@@ -218,13 +173,23 @@
           <p class="field__hint">Daftar model otomatis diambil dari endpoint terpilih.</p>
         </div>
         <div class="field">
-          <label class="field__label" for="customBaseUrl">Tambah endpoint ([OI]-compatible)</label>
+          <label class="field__label" for="customBaseUrl">Tambah / sunting endpoint ([OI]-compatible)</label>
           <input id="customBaseUrl" class="input" type="text" placeholder="http://127.0.0.1:1234" autocomplete="off" spellcheck="false" />
           <input id="customProviderName" class="input" type="text" placeholder="Nama endpoint (opsional)" autocomplete="off" style="margin-top:var(--space-2)" />
-          <input id="customProviderKey" class="input" type="password" placeholder="Kunci API (opsional)" autocomplete="off" style="margin-top:var(--space-2)" />
+          <div class="input-wrap" style="margin-top:var(--space-2)">
+            <input id="customProviderKey" class="input" type="password" placeholder="Kunci API endpoint (opsional)" autocomplete="off" />
+            <button id="providerKeyToggle" class="input-wrap__btn" type="button" aria-label="Tampilkan kunci">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+          </div>
           <button id="addCustomProvider" class="btn btn--ghost btn--sm" type="button" style="margin-top:var(--space-2)">Hubungkan endpoint</button>
-          <p class="field__hint">Kunci kosong = tanpa header auth (endpoint lokal seperti LM Studio).</p>
+          <p class="field__hint">Kunci disimpan di browser ini dan dipakai khusus untuk endpoint tersebut. Kunci kosong = tanpa header auth (endpoint lokal seperti LM Studio).</p>
         </div>
+        <!-- DAFTAR ENDPOINT TERDAFTAR + SUNTING/HAPUS -->
+        <ul id="providerList" class="provider-list" aria-label="Endpoint terdaftar"></ul>
       </section>
 
       <div class="panel__divider" role="separator"></div>
@@ -336,6 +301,24 @@
             <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span>
           </div>
           <p class="field__hint" id="levelDesc">Seimbang</p>
+        </div>
+      </section>
+
+      <div class="panel__divider" role="separator"></div>
+
+      <!-- RESET DATA -->
+      <section class="panel" aria-labelledby="panel-reset-title">
+        <div class="panel__header">
+          <h2 class="panel__title" id="panel-reset-title">Reset Data</h2>
+        </div>
+        <div class="field">
+          <p class="field__hint">
+            Menghapus kunci API, endpoint, materi, pengaturan, dan seluruh riwayat sesi dari browser ini.
+            Tindakan ini tidak bisa dibatalkan.
+          </p>
+          <button id="deleteAllBtn" class="btn btn--danger btn--sm" type="button">
+            Hapus semua data
+          </button>
         </div>
       </section>
     </aside>

@@ -39,7 +39,7 @@ export function showToast(message, type = 'info') {
 
 // ===== MODAL =====
 // Fokus sederhana (trap) + tutup via Escape & overlay.
-export function showModal({ title, text, actions = [], onDismiss, closeLabel = 'Tutup' }) {
+export function showModal({ title, text, body = '', actions = [], onDismiss, closeLabel = 'Tutup' }) {
   const root = document.getElementById('modalRoot');
   const previousFocus = document.activeElement;
 
@@ -75,6 +75,15 @@ export function showModal({ title, text, actions = [], onDismiss, closeLabel = '
       p.textContent = line;
       modal.appendChild(p);
     });
+  }
+
+  // Konten kustom (mis. form input) di antara teks dan baris aksi.
+  if (body) {
+    const wrap = document.createElement('div');
+    wrap.className = 'modal__body';
+    if (typeof body === 'string') wrap.innerHTML = body;
+    else wrap.appendChild(body);
+    modal.appendChild(wrap);
   }
 
   const bar = document.createElement('div');
@@ -138,7 +147,7 @@ export function showModal({ title, text, actions = [], onDismiss, closeLabel = '
   const firstBtn = buttons.find((b) => b.classList.contains('btn--primary')) || buttons[0] || closeBtn;
   firstBtn.focus();
 
-  return { close };
+  return { close, modal };
 }
 
 // ===== MODAL KONFIRMASI =====

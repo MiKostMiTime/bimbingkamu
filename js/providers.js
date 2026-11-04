@@ -60,9 +60,54 @@ export const DEFAULT_PROVIDERS = {
 export function resolveProviders(custom = []) {
   const all = { ...PROVIDERS, ...DEFAULT_PROVIDERS };
   for (const p of custom) {
-    if (p && p.id && p.baseUrl) all[p.id] = { ...p, custom: true };
+    if (!p || !p.id) continue;
+    // Endpoint bawaan yang "dihapus" user disimpan sebagai override
+    // { id, baseUrl, hidden: true } → jangan tampilkan lagi.
+    if (p.hidden) {
+      delete all[p.id];
+      continue;
+    }
+    if (p.baseUrl) all[p.id] = { ...p, custom: true };
   }
   return all;
+}
+
+// ===== CRUD PROVIDER CUSTOM (murni, array → array) =====
+// Dipakai drawer Pengaturan untuk menambah/menyunting/hapus endpoint. Semua
+// fungsi murni (stateless): terima array provider, kembalikan array baru tanpa
+// memodifikasi input. state.settings.providers di app.js yang menyimpan hasil.
+export function addProvider(providers, provider) {
+  return [...providers, provider];
+}
+
+export function updateProvider(providers, id, patch) {
+  return providers.map((p) => (p.id === id ? { ...p, ...patch } : p));
+}
+
+// Hapus endpoint dari daftar settings. Endpoint bawaan (seed) tidak bisa
+// benar-benar hilang dari registry, jadi disimpan sebagai override
+// { hidden: true } dengan id yang sama; resolveProviders akan menyaringnya.
+export function removeProvider(providers, id, defaults = DEFAULT_PROVIDERS) {
+  const seed = defaults[id];
+  if (!seed) return providers.filter((p) => p.id !== id);
+  const existing = providers.find((p) => p.id === id);
+  if (existing) return updateProvider(providers, id, { hidden: true });
+  return [...providers, { ...seed, id, baseUrl: seed.baseUrl, hidden: true }];
+}
+
+// Pilih provider aktif baru setelah satu endpoint dihapus: tetap pada yang
+// aktif bila masih ada; bila dihapus → endpoint pertama tersisa; bila habis → ''.
+export function nextActiveAfterDelete(providers, activeId, deletedId) {
+  const remaining = providers.filter((p) => p.id !== deletedId);
+  return remaining.some((p) => p.id === activeId) ? activeId : (remaining[0]?.id || '');
+}
+
+// ===== PRESDENSI KUNCI PER-ENDPOINT (murni) =====
+// Kunci endpoint menang; bila kosong → fallback kunci umum (legacy); bila tak
+// ada apa-apa → ''. Wrapper app.js: resolveApiKey(currentProviders(), id, apiKey).
+export function resolveApiKey(providers, activeId, legacyKey) {
+  const p = providers[activeId];
+  return (p && p.key) || legacyKey || '';
 }
 
 // Header otentikasi: kunci kosong → TANPA header auth (endpoint lokal
