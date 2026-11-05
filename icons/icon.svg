@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="TanyaBukan">
+  <title>TanyaBukan</title>
+
+  <!-- Background: full-bleed #FAFAFA so maskable clipping never shows gaps -->
+  <rect width="1024" height="1024" fill="#FAFAFA"/>
+
+  <!-- ===== Speech bubble (gelembung percakapan) in indigo ===== -->
+  <!-- Rounded body + a tail at the lower-left. Kept inside ~80% safe zone. -->
+  <path d="M300 180
+           L740 180
+           A140 140 0 0 1 880 320
+           L880 520
+           A140 140 0 0 1 740 700
+           L470 700
+           L300 820
+           L410 700
+           L300 700
+           A140 140 0 0 1 160 560
+           L160 320
+           A140 140 0 0 1 300 180
+           Z"
+        fill="#4F46E5"/>
+
+  <!-- Subtle gloss highlight on the upper body -->
+  <ellipse cx="470" cy="300" rx="250" ry="120" fill="#FFFFFF" opacity="0.12"/>
+
+  <!-- Thin inner ring for a polished app-icon edge -->
+  <path d="M300 180
+           L740 180
+           A140 140 0 0 1 880 320
+           L880 520
+           A140 140 0 0 1 740 700
+           L470 700
+           L300 820
+           L410 700
+           L300 700
+           A140 140 0 0 1 160 560
+           L160 320
+           A140 140 0 0 1 300 180
+           Z"
+        fill="none" stroke="#FFFFFF" stroke-width="6" opacity="0.18"/>
+
+  <!-- ===== "?" motif in white (hero) ===== -->
+  <path d="M470 315
+           C460 268 612 268 612 345
+           C612 406 528 410 512 462
+           C500 500 548 516 566 566
+           L566 628"
+        fill="none" stroke="#FFFFFF" stroke-width="64"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Dot of the "?" -->
+  <circle cx="592" cy="708" r="48" fill="#FFFFFF"/>
+
+  <!-- ===== Small open-book accent (#C7D2FE) at lower-right ===== -->
+  <g transform="translate(648 476) scale(1.25)">
+    <path d="M50 24 C30 22 12 26 6 34 L6 64 C12 58 30 56 50 58 Z" fill="#C7D2FE"/>
+    <path d="M50 24 C70 22 88 26 94 34 L94 64 C88 58 70 56 50 58 Z" fill="#DDE3FE"/>
+    <path d="M50 24 L50 58" stroke="#4F46E5" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+    <path d="M18 40 L44 42 M20 50 L44 52" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" fill="none" opacity="0.7"/>
+    <path d="M56 42 L82 40 M56 52 L80 50" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" fill="none" opacity="0.7"/>
+  </g>
+</svg>
