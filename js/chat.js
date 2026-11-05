@@ -507,6 +507,60 @@ export function renderSources(msg, sources, { onSave } = {}) {
   return box;
 }
 
+// Tampilkan status websearch per-jawaban di bubble model: loading (menjawab),
+// not-found (ada grounding, tak ada sumber), atau unsupported (grounding tak
+// didukung endpoint). Container .msg__sources dipakai bersama renderSources agar
+// transisi loading → sumber tetap satu blok.
+export function showWebSearchStatus(col, status) {
+  if (!col) return null;
+  const box = getSourcesBox(col);
+  box.innerHTML = '';
+
+  if (status === 'loading') {
+    const spin = document.createElement('div');
+    spin.className = 'typing';
+    spin.setAttribute('aria-label', 'Sedang mencari sumber web');
+    for (let i = 0; i < 3; i++) spin.appendChild(document.createElement('span'));
+    box.appendChild(spin);
+    const p = document.createElement('p');
+    p.className = 'msg__sources-title';
+    p.textContent = 'Mencari sumber web…';
+    box.appendChild(p);
+    return box;
+  }
+
+  const p = document.createElement('p');
+  p.className = 'msg__sources-title';
+  p.textContent = status === 'unsupported'
+    ? 'Sumber web not didukung endpoint ini.'
+    : 'Tidak ada sumber web.';
+  box.appendChild(p);
+  return box;
+}
+
+// Label status websearch per-state (logika murni, untuk diuji).
+export function webSearchStatusText(state) {
+  return {
+    loading: 'Mencari sumber web…',
+    'not-found': 'Tidak ada sumber web.',
+    unsupported: 'Sumber web not didukung endpoint ini.',
+  }[state];
+}
+
+// Terapkan status websearch FINAL ke bubble model (setelah jawaban / saat render
+// ulang sesi, sunting, regenerasi). Sumber → renderSources (pakai container
+// loading bila ada); tak ada → not-found/unsupported. onSave opsional agar tombol
+// "＋ Simpan ke materi" tetap muncul lewat jalur ini.
+export function applyWebSearchState(col, { sources = [], supportsGrounding, onSave } = {}) {
+  if (!col) return;
+  if (sources && sources.length) {
+    // renderSources mengambil col via querySelector('.msg__col'); col diketahui.
+    renderSources({ querySelector: () => col }, sources, { onSave });
+  } else {
+    showWebSearchStatus(col, supportsGrounding ? 'not-found' : 'unsupported');
+  }
+}
+
 // ===== TOMBOL REGENERASI (REDO) =====
 // Tombol aksi di footer bubble model untuk meregenerasi balasan terakhir.
 export const REDO_ICON =

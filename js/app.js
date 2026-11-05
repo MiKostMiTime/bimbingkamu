@@ -33,7 +33,8 @@ import {
   removeEmptyState,
   scrollToEnd,
   renderRich,
-  renderSources,
+  showWebSearchStatus,
+  applyWebSearchState,
   EDIT_ICON,
   COPY_ICON,
   DELETE_ICON,
@@ -156,6 +157,25 @@ function logApiError(err) {
 
 // Registry provider = endpoint terdaftar user (tanpa bawaan).
 function currentProviders() { return resolveProviders(state.settings.providers || []); }
+
+// Kapabilities grounding endpoint aktif ( untuk indikator websearch per-jawaban).
+function supportsGroundingFor() {
+  return Boolean(currentProviders()[state.settings.provider]?.supportsGrounding);
+}
+
+// Tampilkan status websearch FINAL ke bubble model: sumber / 'tidak ada' /
+// 'not didukung'. Hanya saat websearch aktif. Dipakai di semua jalur yang
+// membangun bubble dari metadata tersimpan (restore, sunting, regenerasi).
+// Loading ("Mencari sumber web…") hanya ditunjukkan saat menjawab di
+// sendUserMessage, bukan di sini.
+function renderModelWebSearch(built, m) {
+  if (!built || !m || !m.webSearch) return;
+  applyWebSearchState(built.col, {
+    sources: m.sources || [],
+    supportsGrounding: m.supportsGrounding,
+    onSave: () => saveWebMateri(m.sources || []),
+  });
+}
 
 // Kunci aktif: kunci khusus endpoint menang; bila kosong → fallback kunci umum
 // (legacy); bila tak ada apa-apa → ''. Endpoint lokal tanpa auth tetap ''
@@ -851,7 +871,7 @@ function renderMessagesFromState() {
     } else if (m.role === 'model') {
       const built = addModelMessage(dom.messages);
       renderRich(built.content, m.text);
-      renderSources(built.msg, m.sources, { onSave: () => saveWebMateri(m.sources) });
+      renderModelWebSearch(built, m);
       stampModelBubble(built.msg, i);
       buildModelActions(built.col, built.msg);
     } else {
@@ -1064,6 +1084,9 @@ async function sendUserMessage(rawText, opts = {}) {
     // Tandai "sedang menulis" di dalam bubble (bukan bubble terpisah) agar
     // progress tetap terlihat saat model sedang berpikir, sebelum token pertama.
     dots = insertBubbleTyping(built.content);
+    // Saat websearch aktif, tampilkan "Mencari sumber web…" di bawah bubble selama
+    // menjawab (loading). Setelah selesai → applyWebSearchState (sumber / tidak ada).
+    if (state.settings.webSearch) showWebSearchStatus(built.col, 'loading');
     let streamed = false;
     let lastRenderAt = 0, renderedWords = 0; // throttle paint streaming (token-by-token)
     const { text: reply, tokens, sources } = await providerChat(state.settings.provider, {
@@ -1093,7 +1116,7 @@ async function sendUserMessage(rawText, opts = {}) {
         }
       },
     });
-    const modelMsg = { role: 'model', text: reply, sources, tokens };
+    const modelMsg = { role: 'model', text: reply, sources, tokens, webSearch: state.settings.webSearch, supportsGrounding: supportsGroundingFor() };
     state.messages.push(modelMsg);
     answered = true;
     if (streamed) {
@@ -1105,7 +1128,10 @@ async function sendUserMessage(rawText, opts = {}) {
       dots.remove();
       streamReply(built.content, reply, built.msg); // fallback: endpoint tanpa SSE
     }
-    renderSources(built.msg, sources, { onSave: () => saveWebMateri(sources) });
+    // Sumber web per-jawaban: loading sudah ditampilkan; kini tampilkan keadaan akhir.
+    if (state.settings.webSearch) {
+      applyWebSearchState(built.col, { sources, supportsGrounding: supportsGroundingFor(), onSave: () => saveWebMateri(sources) });
+    }
     stampModelBubble(built.msg);
     buildModelActions(built.col, built.msg);
   } catch (err) {
@@ -1166,7 +1192,7 @@ function rerenderModelMessage(idx) {
   if (!msg) return;
   const built = addModelMessage(dom.messages);
   renderRich(built.content, msg.text || '');
-  renderSources(built.msg, msg.sources || [], { onSave: () => saveWebMateri(msg.sources || []) });
+  renderModelWebSearch(built, msg);
   stampModelBubble(built.msg, idx);
   buildModelActions(built.col, built.msg);
 }
@@ -1233,7 +1259,7 @@ function rerenderModelMessagesFrom(startIdx) {
     else if (m.role === 'model') {
       const built = addModelMessage(dom.messages);
       renderRich(built.content, m.text || '');
-      renderSources(built.msg, m.sources || [], { onSave: () => saveWebMateri(m.sources || []) });
+      renderModelWebSearch(built, m);
       stampModelBubble(built.msg, i);
       buildModelActions(built.col, built.msg);
     } else addNotice(dom.messages, m.text, m.role);
