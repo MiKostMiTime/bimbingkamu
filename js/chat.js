@@ -389,8 +389,8 @@ export function insertBubbleTyping(content) {
   for (let i = 0; i < 3; i += 1) typing.appendChild(document.createElement('span'));
   typing.append(status, caret);
   // Letakkan di ATAS konten (saudara .msg__content) agar tetap tampil saat
-  // streaming — renderRich() memimpa innerHTML content, jadi indikator di dalam
-  // akan hilang saat token pertama muncul.
+  // streaming — renderRich() memimpa innerHTML content, jadi indikator ini
+  // TIDAK hilang sendiri; dihapus eksplisit di app.js saat token pertama alir.
   const bubble = content.closest('.msg__bubble');
   if (bubble) bubble.insertBefore(typing, content);
   else content.prepend(typing);
@@ -534,10 +534,15 @@ export function showWebSearchStatus(col, status) {
   box.innerHTML = '';
 
   if (status === 'loading') {
+    // Indikator loading websearch: satu titik berdenyut — berbeda dari
+    // titik-titik .typing di bubble jawaban agar tak terkesan ganda.
     const spin = document.createElement('div');
-    spin.className = 'typing';
+    spin.className = 'sources-loading';
     spin.setAttribute('aria-label', 'Sedang mencari sumber web');
-    for (let i = 0; i < 3; i++) spin.appendChild(document.createElement('span'));
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.setAttribute('aria-hidden', 'true');
+    spin.appendChild(dot);
     box.appendChild(spin);
     const p = document.createElement('p');
     p.className = 'msg__sources-title';

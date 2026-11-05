@@ -1052,6 +1052,29 @@
   animation-delay: 0.3s;
 }
 
+/* Indikator loading websearch: satu titik berdenyut (berbeda dari
+   titik-titik .typing di atas agar tak terkesan ganda). Dihormati
+   prefers-reduced-motion lewat aturan * global di akhir file. */
+.sources-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-1) 0;
+}
+
+.sources-loading .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  animation: sources-pulse 1.2s infinite ease-in-out;
+}
+
+@keyframes sources-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
 /* Status bertahap + kursor berkedip (Task 4). Menimpa .typing span generik
    (titik-titik 6px + denyut) pada status & kursor, bukan titik-titik. */
 .typing__status {

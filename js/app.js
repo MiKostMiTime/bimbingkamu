@@ -1137,7 +1137,14 @@ async function sendUserMessage(rawText, opts = {}) {
       customProviders: state.settings.providers || [],
       signal: abortCtl.signal,
       onDelta: (acc) => {
-        if (!streamed) { streamed = true; typing.status.textContent = typingStatusText('answering'); typing.setCaret(true); }
+        if (!streamed) {
+          streamed = true;
+          // Mulai alir token → hapus indikator loading (dots/status/caret);
+          // hanya tersisa teks markdown yang mengalir. .typing adalah saudara
+          // .msg__content, bukan anak-nya, jadi renderRich() tak menghapusnya —
+          // dihapus eksplisit di sini saat token pertama muncul.
+          typing.el.remove();
+        }
         const words = (acc.match(/\S+/g) || []).length;
         const now = performance.now();
         // Paint inkremental: maks tiap ~50 ms atau ~3 kata → rasa token-by-token,
