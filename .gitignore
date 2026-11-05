@@ -1,0 +1,20 @@
+# ===== IDE & EDITOR =====
+.idea/
+.vscode/
+*.iml
+
+# ===== AGENT / SUPERPOWERS (OpenCode) — bukan bagian webapp =====
+.superpowers/
+
+# ===== DEV-ONLY: UNIT TESTS & DOKUMENTASI PLAN/SPEC =====
+# Tetap tersimpan lokal untuk verifikasi/dokumen, tapi TAK ter-deploy ke Vercel.
+tests/
+docs/
+
+# ===== LOCAL DEV SCRIPTS & SCRATCH =====
+tmp/
+
+# ===== NODE (jika nanti ada build step) =====
+node_modules/
+package-lock.json
+.vercel/

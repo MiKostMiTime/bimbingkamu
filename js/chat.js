@@ -19,7 +19,7 @@ function escapeHtml(str) {
 }
 
 // ===== RENDER MARKDOWN (aman) =====
-// marked + DOMPurify (dimuat via CDN di index.html). Jika CDN
+// marked + DOMPurify dimuat lokal (./vendor) di index.html. Jika muat
 // gagal (offline), turunkan ke teks polos yang di-escape.
 export function renderMarkdown(text) {
   const markedLib = window.marked;
