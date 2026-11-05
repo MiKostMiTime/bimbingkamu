@@ -276,7 +276,7 @@ export async function listModels(apiKey, provider) {
 
 // ===== CHAT COMPLETION (PATH OPENAI) =====
 // POST ${baseUrl}${chatPath} body { model, messages, max_tokens, tools?, generationConfig? }.
-// Parameter: { provider, apiKey, model, systemPrompt, contents, maxTokens, thinkingLevel, grounding, onDelta }
+// Parameter: { provider, apiKey, model, systemPrompt, contents, maxTokens, thinkingLevel, grounding, onDelta, signal }
 // `contents` = array { role: 'user'|'model', text } (riwayat penuh).
 // onDelta(akumulasi) — bila fungsi diberikan, request streaming (SSE) dan
 // tiap token dipanggil balik ke UI secara live; endpoint/browser yang tidak
@@ -284,7 +284,7 @@ export async function listModels(apiKey, provider) {
 // Mengembalikan Promise<{ text, tokens:{prompt,completion,total}, sources }>.
 export async function chatCompletion({
   provider, apiKey, model, systemPrompt, contents,
-  maxTokens = 8192, thinkingLevel, grounding, onDelta,
+  maxTokens = 8192, thinkingLevel, grounding, onDelta, signal,
 }) {
   if (!provider || !provider.baseUrl) {
     throw { type: 'badrequest', message: 'Pilih endpoint & model dulu, ya.' };
@@ -305,7 +305,7 @@ export async function chatCompletion({
 
   let res;
   try {
-    res = await buildChatRequest(provider, apiKey, body, grounding);
+    res = await buildChatRequest(provider, apiKey, body, grounding, signal);
   } catch (err) {
     throw err;
   }
@@ -331,7 +331,7 @@ export async function chatCompletion({
   // Jalur SSE: baca data: {...} per chunk, akumulasi delta.content,
   // panggil onDelta live, kumpulkan usage + SUMBER grounding dari chunk.
   if (wantStream && res.body && typeof res.body.getReader === 'function') {
-    const streamed = await readSSE(res, onDelta);
+    const streamed = await readSSE(res, onDelta, signal);
     return {
       text: streamed.text.trim(),
       tokens: {
@@ -368,7 +368,7 @@ export async function chatCompletion({
 // Parser SSE untuk chat streaming (format OpenAI):
 // baris "data: {json}" diakhiri "data: [DONE]". Delta konten diambil dari
 // choices[0].delta.content; usage (bila dikirim endpoint) dari chunk mana pun.
-async function readSSE(res, onDelta) {
+export async function readSSE(res, onDelta, signal) {
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = '', text = '', usage = null, sources = [];
@@ -395,6 +395,8 @@ async function readSSE(res, onDelta) {
         buf = buf.slice(nl + 1);
         if (line.startsWith('data:')) handle(line.slice(5).trim());
       }
+      // Berhenti setelah chunk ini diproses bila user sudah menekan Berhendi.
+      if (signal && signal.aborted) break;
     }
     // Sisa buffer tanpa newline di akhir stream.
     const tail = buf.trim();
@@ -407,12 +409,13 @@ async function readSSE(res, onDelta) {
 }
 
 // Bangun & kirim POST chat; tambahkan tools grounding bila diminta + didukung.
-async function buildChatRequest(provider, apiKey, body, grounding) {
+async function buildChatRequest(provider, apiKey, body, grounding, signal) {
   if (grounding && provider.supportsGrounding) body.tools = [{ type: 'function', function: { name: 'google_search', description: 'web grounding' } }];
   return fetch(`${provider.baseUrl}${provider.chatPath}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeader(apiKey) },
     body: JSON.stringify(body),
+    signal,
   });
 }
 

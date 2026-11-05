@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 
 import { mapApiError, extractSources, isValidHttpUrl, truncateSnippet, classifyWebSearch } from '../js/api.js';
 import { sourceAnchor, webSearchStatusText, typingStatusText } from '../js/chat.js';
+import { readSSE } from '../js/providers.js';
 import { deriveTitle, syncSession, migrateLegacy, createSession, trimSessions } from '../js/sessions.js';
 import { extractMath } from '../js/math.js';
 import { itemsToText } from '../js/pdf.js';
@@ -196,4 +197,25 @@ test('webSearchStatusText: label per-state (Indonesia)', () => {
 test('typingStatusText: status bertahap (Menghubungkan → Menjawab)', () => {
   assert.equal(typingStatusText('connecting'), 'Menghubungkan ke AI…');
   assert.equal(typingStatusText('answering'), 'Sedang menjawab…');
+});
+
+// ---------- readSSE (abort) ----------
+test('readSSE: parsial text dikembalikan saat abort di tengah stream', async () => {
+  const enc = new TextEncoder();
+  const ac = new AbortController();
+  let call = 0;
+  const reader = {
+    async read() {
+      call += 1;
+      if (call === 1) return { done: false, value: enc.encode('data: {"choices":[{"delta":{"content":"Halo"}}]}\n') };
+      if (ac.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      return { done: true, value: undefined };
+    },
+    releaseLock() {}, cancel() {},
+  };
+  const res = { body: { getReader: () => reader } };
+  ac.abort(); // berhenti sebelum stream selesai
+  const out = await readSSE(res, () => {}, ac.signal);
+  assert.equal(out.text, 'Halo');
+  assert.ok(Array.isArray(out.sources));
 });
