@@ -950,6 +950,7 @@ async function generateGreeting() {
     // Bubble dibuat sebelum await → token SSE mengalir langsung ke layar.
     built = addModelMessage(dom.messages);
     let streamed = false;
+    let lastRenderAt = 0, renderedWords = 0; // throttle paint streaming (token-by-token)
     const { text: replyText, tokens, sources } = await providerChat(state.settings.provider, {
       apiKey: activeApiKey(),
       model: state.settings.model,
@@ -964,7 +965,16 @@ async function generateGreeting() {
       thinkingLevel: thinkingLevelFor(),
       grounding: false,
       customProviders: state.settings.providers || [],
-      onDelta: (acc) => { streamed = true; renderRich(built.content, acc); scrollToEnd(dom.chatScroll); },
+      onDelta: (acc) => {
+        streamed = true;
+        const words = (acc.match(/\S+/g) || []).length;
+        const now = performance.now();
+        if (now - lastRenderAt >= 50 || words - renderedWords >= 3) {
+          renderRich(built.content, acc, { skipMath: true });
+          scrollToEnd(dom.chatScroll);
+          lastRenderAt = now; renderedWords = words;
+        }
+      },
     });
     const modelMsg = { role: 'model', text: replyText, tokens, sources };
     state.messages.push(opening, modelMsg);
@@ -1055,6 +1065,7 @@ async function sendUserMessage(rawText, opts = {}) {
     // progress tetap terlihat saat model sedang berpikir, sebelum token pertama.
     dots = insertBubbleTyping(built.content);
     let streamed = false;
+    let lastRenderAt = 0, renderedWords = 0; // throttle paint streaming (token-by-token)
     const { text: reply, tokens, sources } = await providerChat(state.settings.provider, {
       apiKey: activeApiKey(),
       model: state.settings.model,
@@ -1071,7 +1082,15 @@ async function sendUserMessage(rawText, opts = {}) {
       customProviders: state.settings.providers || [],
       onDelta: (acc) => {
         if (!streamed) { dots.remove(); streamed = true; }
-        renderRich(built.content, acc); scrollToEnd(dom.chatScroll);
+        const words = (acc.match(/\S+/g) || []).length;
+        const now = performance.now();
+        // Paint inkremental: maks tiap ~50 ms atau ~3 kata → rasa token-by-token,
+        // KaTeX di-hydrate sekali di render final (skipMath saat live). Ringan, tak berkedip.
+        if (now - lastRenderAt >= 50 || words - renderedWords >= 3) {
+          renderRich(built.content, acc, { skipMath: true });
+          scrollToEnd(dom.chatScroll);
+          lastRenderAt = now; renderedWords = words;
+        }
       },
     });
     const modelMsg = { role: 'model', text: reply, sources, tokens };

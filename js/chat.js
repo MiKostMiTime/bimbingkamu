@@ -148,10 +148,10 @@ function hydrateMath(container, math) {
 }
 
 // ===== RENDER KAYA (markdown + math) ke sebuah elemen =====
-export function renderRich(el, text) {
+export function renderRich(el, text, { skipMath = false } = {}) {
   const { text: safe, math } = extractMath(text);
   el.innerHTML = renderMarkdown(safe);
-  hydrateMath(el, math);
+  if (!skipMath) hydrateMath(el, math); // streaming live: tunda hydrate KaTeX agar ringan
 }
 
 // ===== AVATAR =====

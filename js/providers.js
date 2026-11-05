@@ -28,7 +28,7 @@ export const DEFAULT_PROVIDERS = {
     baseUrl: 'https://openrouter.ai/api/v1',
     modelsPath: '/models',
     chatPath: '/chat/completions',
-    supportsGrounding: false,
+    supportsGrounding: true, // websearch → tools pencarian (semua provider bisa)
     supportsThinking: true,
     custom: false,
   },
@@ -48,7 +48,7 @@ export const DEFAULT_PROVIDERS = {
     baseUrl: 'https://api.openai.com/v1',
     modelsPath: '/models',
     chatPath: '/chat/completions',
-    supportsGrounding: false,
+    supportsGrounding: true, // websearch → tools pencarian (semua provider bisa)
     supportsThinking: true,
     custom: false,
   },
@@ -329,7 +329,7 @@ export async function chatCompletion({
   }
 
   // Jalur SSE: baca data: {...} per chunk, akumulasi delta.content,
-  // panggil onDelta live, kumpulkan usage dari chunk terakhir.
+  // panggil onDelta live, kumpulkan usage + SUMBER grounding dari chunk.
   if (wantStream && res.body && typeof res.body.getReader === 'function') {
     const streamed = await readSSE(res, onDelta);
     return {
@@ -339,7 +339,7 @@ export async function chatCompletion({
         completion: streamed.usage?.completion_tokens ?? undefined,
         total: streamed.usage?.total_tokens ?? undefined,
       },
-      sources: [],
+      sources: streamed.sources || [], // ambil dari chunk, bukan hardcode []
     };
   }
 
@@ -354,7 +354,14 @@ export async function chatCompletion({
     total: usage.total_tokens ?? undefined,
   };
   let sources = [];
-  if (data.candidates) sources = extractSources(data.candidates[0]); // sumber grounding bila ada
+  // Sumber grounding: Gemini native baca candidates[], endpoint OpenAI-compatible
+  // kirim citations/tool_calls di top-level body (atau choices[0].message).
+  if (data.candidates) {
+    sources = extractSources(data.candidates[0]);
+  } else {
+    sources = extractSources(data);
+    if (!sources.length && choice?.message) sources = extractSources(choice.message);
+  }
   return { text: text.trim(), tokens, sources };
 }
 
@@ -364,7 +371,7 @@ export async function chatCompletion({
 async function readSSE(res, onDelta) {
   const reader = res.body.getReader();
   const dec = new TextDecoder();
-  let buf = '', text = '', usage = null;
+  let buf = '', text = '', usage = null, sources = [];
   const handle = (payload) => {
     if (payload === '[DONE]') return;
     let ev; try { ev = JSON.parse(payload); } catch { return; } // baris rusak → lewati
@@ -372,6 +379,10 @@ async function readSSE(res, onDelta) {
     const delta = choice && choice.delta && choice.delta.content;
     if (delta) { text += delta; onDelta(text); }
     if (ev.usage) usage = ev.usage;
+    // Tangkap sumber grounding bila muncul di chunk (terakhir menang).
+    let src = extractSources(ev);
+    if (!src.length && choice) src = extractSources(choice.message || choice);
+    if (src && src.length) sources = src;
   };
   try {
     for (;;) {
@@ -389,10 +400,10 @@ async function readSSE(res, onDelta) {
     const tail = buf.trim();
     if (tail.startsWith('data:')) handle(tail.slice(5).trim());
   } catch (err) {
-    if (text) return { text, usage }; // stream putus di tengah → pakai yang sudah datang
+    if (text) return { text, usage, sources }; // stream putus di tengah → pakai yang sudah datang
     throw { ...mapApiError(0), message: (err && err.message) || 'Koneksi streaming terputus.' };
   }
-  return { text, usage };
+  return { text, usage, sources };
 }
 
 // Bangun & kirim POST chat; tambahkan tools grounding bila diminta + didukung.

@@ -46,17 +46,36 @@ export function mapApiError(status, apiMessage = '') {
 }
 
 // ===== SUMBER WEB (GROUNDING) =====
-// Ambil rujukan web dari groundingMetadata (bila endpoint menyediakan):
-// hanya chunk ber-URI web, dedup per URL, maks 6 item, snippet (dari
-// groundingSupports) dipangkas 500 karakter. Hasil [{ url, title, snippet }]
-// — data polos, aman disimpan ke materi sesi (localStorage) dan ke ekspor.
-export function extractSources(candidate) {
-  const gm = candidate && candidate.groundingMetadata;
+// Ambil rujukan web dari response endpoint (bila tersedia). Mendukung BEBERAPA
+// shape agar jalan di SEMUA provider, lalu menyatukannya ke [{ url, title, snippet }]:
+//   - Gemini native     : candidate.groundingMetadata.groundingChunks/Supports
+//   - OpenAI-Gemini     : body.citations[]            ({ uri, title })
+//   - OpenAI-Gemini     : body.grounding_metadata      (bersarang)
+//   - Generic           : choices[].message.tool_calls[]
+// Kredibel: hanya URL http(s), dedup per URL, maks 6 item, snippet dipangkas 500
+// karakter. Data polos, aman disimpan ke materi sesi (localStorage) dan ke ekspor.
+export function extractSources(input) {
+  if (!input) return [];
+  // 1) Gemini native (candidate.groundingMetadata) — jalur utama, output stabil.
+  if (input.groundingMetadata) return fromGroundingMetadata(input.groundingMetadata);
+  // 2) OpenAI-compatible: citations di top-level body.
+  if (Array.isArray(input.citations)) return fromCitations(input.citations);
+  // 3) OpenAI-compatible Gemini: grounding_metadata bersarang.
+  if (input.grounding_metadata && input.grounding_metadata.groundingChunks) {
+    return fromGroundingMetadata(input.grounding_metadata);
+  }
+  // 4) Generic: tool_calls (best-effort).
+  if (Array.isArray(input.tool_calls)) return fromToolCalls(input.tool_calls);
+  return [];
+}
+
+// Shape native Gemini: isi kutipan ada di groundingSupports (segment.text),
+// dihubungkan ke chunk lewat groundingChunkIndices — groundingChunks sendiri
+// tidak punya teks. Hanya chunk ber-URI web, dedup per URL, maks 6.
+function fromGroundingMetadata(gm) {
   const chunks = gm && Array.isArray(gm.groundingChunks) ? gm.groundingChunks : [];
   const supports = gm && Array.isArray(gm.groundingSupports) ? gm.groundingSupports : [];
 
-  // Isi kutipan ada di groundingSupports (segment.text), dihubungkan ke chunk
-  // lewat groundingChunkIndices — groundingChunks sendiri tidak punya teks.
   const snippetByChunk = new Map();
   for (const s of supports) {
     const t = s && s.segment && s.segment.text;
@@ -79,4 +98,49 @@ export function extractSources(candidate) {
     });
   });
   return out;
+}
+
+// Shape OpenAI-Gemini: citations [{ uri, title, score? }] di top-level body.
+function fromCitations(cits) {
+  const seen = new Set();
+  const out = [];
+  for (const c of cits) {
+    if (!c || out.length >= 6) continue;
+    const url = c.uri || c.url || (c.web && c.web.uri);
+    if (!url || typeof url !== 'string' || !/^https?:/.test(url)) continue; // kredibel: http(s)
+    const key = normalizeUrl(url);
+    if (seen.has(key)) continue; // dedup per URL
+    seen.add(key);
+    out.push({ url, title: c.title || url, snippet: '' });
+  }
+  return out;
+}
+
+// Shape generic: tool_calls[] (best-effort). Beberapa endpoint menyimpan rujukan
+// di args JSON atau field custom (metadata.url / source).
+function fromToolCalls(tcs) {
+  const seen = new Set();
+  const out = [];
+  for (const tc of tcs) {
+    if (!tc || out.length >= 6) continue;
+    const args = tc.args && typeof tc.args === 'string' ? safeParse(tc.args) : tc.args;
+    const meta = tc.metadata || {};
+    const url = (args && (args.url || args.uri || args.source)) || meta.url || meta.uri;
+    const title = (args && (args.title || args.name)) || meta.title;
+    if (!url || typeof url !== 'string' || !/^https?:/.test(url)) continue; // kredibel: http(s)
+    const key = normalizeUrl(url);
+    if (seen.has(key)) continue; // dedup per URL
+    seen.add(key);
+    out.push({ url, title: title || url, snippet: '' });
+  }
+  return out;
+}
+
+// Normalisasi URL untuk dedup (hilangkan trailing slash).
+function normalizeUrl(url) {
+  try { return new URL(url).href.replace(/\/$/, ''); } catch { return url; }
+}
+
+function safeParse(str) {
+  try { return JSON.parse(str); } catch { return null; }
 }
