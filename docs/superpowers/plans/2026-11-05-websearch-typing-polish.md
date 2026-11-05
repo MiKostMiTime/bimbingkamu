@@ -506,7 +506,7 @@ git commit -m "feat(providers): thread AbortSignal ke chatCompletion/buildChatRe
 - Consumes: `abortCtl`, `userStopped`, `stopGeneration()`; passes `signal: abortCtl.signal` into `providerChat`.
 - Produces: button label toggles; click during busy → stop.
 
-- [ ] **Step 1: Write the failing test** — export a tiny pure reducer for the composer state so behavior is verifiable:
+- [x] **Step 1: Write the failing test** — export a tiny pure reducer for the composer state so behavior is verifiable:
 
 ```js
 // app.js
@@ -524,12 +524,12 @@ test('composerButtonState: toggle Kirim/Berhendi', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `node --test tests/core.test.mjs`
 Expected: FAIL — `composerButtonState` not exported from `app.js`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 a) Module-level state (near top of app.js, after `const state = {...}`):
 ```js
@@ -565,12 +565,12 @@ dom.send.addEventListener('click', () => {
 ```
 e) Reset in `finally` blocks: `abortCtl = null; userStopped = false;`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `node --test tests/core.test.mjs`
 Expected: PASS. Manual/Playwright: ketik → tombol "Kirim"; kirim → jadi "Berhendi"; tekan → stream berhenti, parsial tersimpan; tombol aktif kembali.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/core.test.mjs js/app.js
@@ -588,32 +588,31 @@ git commit -m "feat(ui): tombol Berhendi (Krim↔Berhendi) + stopGeneration via 
 **Interfaces:**
 - Consumes: existing `showRetry()`; `userStopped` flag + `AbortError`.
 
-- [ ] **Step 1: Write the failing test** — export a classifier for stop-vs-error:
+- [x] **Step 1: Write the failing test** — export a classifier for stop-vs-error:
 
 ```js
 // app.js
-export function isUserStop(err) {
-  return userStopped || (err && err.name === 'AbortError');
+export function isUserStop(err, stopped = userStopped) {
+  return stopped || !!(err && err.name === 'AbortError');
 }
 ```
-Add test:
+Add test (parameter-based; ESM import binding read-only, jadi flag lewat parameter):
 ```js
 import { isUserStop } from '../js/app.js';
 test('isUserStop: AbortError / flag = stop-user; error lain = sistem', () => {
-  userStopped = true;
-  assert.equal(isUserStop({ name: 'AbortError' }), true);
-  assert.equal(isUserStop({ type: 'server' }), false);
-  userStopped = false;
-  assert.equal(isUserStop({ type: 'network' }), false);
+  assert.equal(isUserStop({ name: 'AbortError' }), true); // AbortError selalu stop-user
+  assert.equal(isUserStop({ type: 'server' }, false), false); // error sistem, tak berhenti
+  assert.equal(isUserStop({ type: 'network' }, false), false);
+  assert.equal(isUserStop({ type: 'server' }, true), true); // error sistem + user stop
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `node --test tests/core.test.mjs`
 Expected: FAIL — `isUserStop` not exported.
 
-- [ ] **Step 3: Write minimal implementation** in `sendUserMessage` catch (replace the current error-only block):
+- [x] **Step 3: Write minimal implementation** in `sendUserMessage` catch (replace the current error-only block):
 
 ```js
 } catch (err) {
@@ -634,7 +633,7 @@ Expected: FAIL — `isUserStop` not exported.
     const msgText = errorDisplayText(err);
     addNotice(dom.messages, msgText, 'error');
     showToast(msgText, 'error');
-    showRetry();
+    showRetry(() => sendUserMessage());
     logApiError(err);
   }
 } finally {
@@ -643,12 +642,12 @@ Expected: FAIL — `isUserStop` not exported.
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `node --test tests/core.test.mjs`
 Expected: PASS. Manual/Playwright: error jaringan/API → muncul "Coba lagi"; Berhendi → tidak muncul retry (parsial tersimpan).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/core.test.mjs js/app.js
