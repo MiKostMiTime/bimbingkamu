@@ -6,6 +6,7 @@
 
 import { extractMath, loadKatex } from './math.js';
 import { formatCost } from './pricing.js';
+import { isValidHttpUrl, truncateSnippet } from './api.js';
 
 // ===== UTIL TEKS =====
 function escapeHtml(str) {
@@ -426,13 +427,40 @@ export function streamText(content, fullText, { skipButton, onDone } = {}) {
 
 // ===== SUMBER WEB (GROUNDING) =====
 // Tampilkan blok "Sumber" + tombol simpan-ke-materi di bawah bubble.
+// Container .msg__sources dipakai bersama showWebSearchStatus agar transisi
+// loading → sumber tidak membuat dua blok terpisah.
+
+// Ambil atau buat container .msg__sources di dalam col.
+function getSourcesBox(col) {
+  let box = col.querySelector('.msg__sources');
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'msg__sources';
+    col.appendChild(box);
+  }
+  return box;
+}
+
+// Pemetai sumber → { href, title, snippet } agar bisa diuji tanpa DOM.
+// href hanya bila url http(s); selainnya null (tampil sebagai teks, tak ada
+// tautan rusak). Judul & snippet dipangkas + aman disimpan.
+export function sourceAnchor(source) {
+  const url = source && source.url;
+  return {
+    href: isValidHttpUrl(url) ? url : null,
+    title: source?.title || url || '',
+    snippet: truncateSnippet(source?.snippet, 200),
+  };
+}
+
 export function renderSources(msg, sources, { onSave } = {}) {
   if (!msg || !sources || !sources.length) return null;
   const col = msg.querySelector('.msg__col');
   if (!col) return null;
 
-  const box = document.createElement('div');
-  box.className = 'msg__sources';
+  // Pakai container yang sama dengan status websearch (jaga transisi rapi).
+  const box = getSourcesBox(col);
+  box.innerHTML = '';
 
   const head = document.createElement('p');
   head.className = 'msg__sources-title';
@@ -442,12 +470,23 @@ export function renderSources(msg, sources, { onSave } = {}) {
   const list = document.createElement('ul');
   for (const s of sources) {
     const li = document.createElement('li');
-    const a = document.createElement('a');
-    a.href = s.url;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.textContent = s.title || s.url;
+    const anchor = sourceAnchor(s);
+    // href http(s) → <a>; selainnya → <span> (teks, tak ada tautan rusak).
+    const a = document.createElement(anchor.href ? 'a' : 'span');
+    if (anchor.href) {
+      a.href = anchor.href;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+    }
+    a.className = 'msg__sources-link';
+    a.textContent = anchor.title; // textContent → aman dari XSS
     li.appendChild(a);
+    if (anchor.snippet) {
+      const p = document.createElement('p');
+      p.className = 'msg__sources-snippet';
+      p.textContent = anchor.snippet; // textContent → aman
+      li.appendChild(p);
+    }
     list.appendChild(li);
   }
   box.appendChild(list);
@@ -465,7 +504,6 @@ export function renderSources(msg, sources, { onSave } = {}) {
     box.appendChild(btn);
   }
 
-  col.appendChild(box);
   return box;
 }
 

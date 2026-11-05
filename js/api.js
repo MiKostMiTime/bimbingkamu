@@ -69,6 +69,35 @@ export function extractSources(input) {
   return [];
 }
 
+// ===== VALIDASI SUMBER (PEMBANTU MURNI) =====
+// Dipakai renderSources di chat.js untuk menentukan apakah URL bisa dijadikan
+// tautan (<a>) atau hanya teks, agar tidak ada tautan rusak dari shape yang
+// tak punya skema (mis. groundingMetadata tanpa http).
+
+// URL kredibel: hanya string dengan skema http(s). Field lain (relative path,
+// number, null) → false, jadi renderSources menampilkannya sebagai teks biasa.
+export function isValidHttpUrl(url) {
+  return typeof url === 'string' && /^https?:\/\//i.test(url);
+}
+
+// Pangkas snippet agar ringkas di bawah tautan; tambahkan elipsis '…' bila lebih
+// dari max karakter. Mengembalikan '' bila kosong/tidak ada.
+export function truncateSnippet(text, max = 200) {
+  const s = String(text ?? '').trim();
+  if (!s) return '';
+  return s.length > max ? `${s.slice(0, max).trimEnd()}…` : s;
+}
+
+// Klasifikasi state sumber web PER-JAWaban (logika murni, UI hanya membaca hasil):
+//   'ok'        → websearch ON + grounding didukung + ada sumber
+//   'not-found' → websearch ON + grounding didukung + tidak ada sumber
+//   'unsupported'→ websearch ON + grounding TIDAK didukung
+export function classifyWebSearch({ webSearch, supportsGrounding, sources }) {
+  if (!webSearch) return 'not-found';
+  if (!supportsGrounding) return 'unsupported';
+  return Array.isArray(sources) && sources.length ? 'ok' : 'not-found';
+}
+
 // Shape native Gemini: isi kutipan ada di groundingSupports (segment.text),
 // dihubungkan ke chunk lewat groundingChunkIndices — groundingChunks sendiri
 // tidak punya teks. Hanya chunk ber-URI web, dedup per URL, maks 6.

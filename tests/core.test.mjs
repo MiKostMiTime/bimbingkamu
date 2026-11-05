@@ -2,7 +2,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { mapApiError, extractSources } from '../js/api.js';
+import { mapApiError, extractSources, isValidHttpUrl, truncateSnippet, classifyWebSearch } from '../js/api.js';
+import { sourceAnchor } from '../js/chat.js';
 import { deriveTitle, syncSession, migrateLegacy, createSession, trimSessions } from '../js/sessions.js';
 import { extractMath } from '../js/math.js';
 import { itemsToText } from '../js/pdf.js';
@@ -145,4 +146,41 @@ test('buildSystemPrompt: persona + gaya global didefinisikan, cap pendek dihapus
   const sp5 = buildSystemPrompt({ materi: 'm', mode: 'konsep', level: 5 });
   assert.ok(!/sependek mungkin/.test(sp5));
   assert.match(sp5, /tetap dalam gaya bicaramu/);
+});
+
+// ---------- isValidHttpUrl / truncateSnippet / classifyWebSearch ----------
+test('isValidHttpUrl: hanya http(s) yang valid', () => {
+  assert.equal(isValidHttpUrl('https://a.id/x'), true);
+  assert.equal(isValidHttpUrl('http://127.0.0.1:1234/y'), true);
+  assert.equal(isValidHttpUrl('/relative/path'), false);
+  assert.equal(isValidHttpUrl('ftp://x'), false);
+  assert.equal(isValidHttpUrl(undefined), false);
+  assert.equal(isValidHttpUrl(123), false);
+});
+
+test('truncateSnippet: pangkas + elipsis di ~max karakter', () => {
+  assert.equal(truncateSnippet('halo dunia', 8), 'halo dun…');
+  assert.equal(truncateSnippet('pendek', 200), 'pendek');
+  assert.equal(truncateSnippet('abc', undefined), 'abc');
+  assert.equal(truncateSnippet('', 10), '');
+});
+
+test('classifyWebSearch: ok / not-found / unsupported', () => {
+  assert.equal(classifyWebSearch({ webSearch: true, supportsGrounding: true, sources: [{ url: 'a' }] }), 'ok');
+  assert.equal(classifyWebSearch({ webSearch: true, supportsGrounding: true, sources: [] }), 'not-found');
+  assert.equal(classifyWebSearch({ webSearch: true, supportsGrounding: false, sources: [] }), 'unsupported');
+  assert.equal(classifyWebSearch({ webSearch: false, supportsGrounding: true, sources: [{ url: 'a' }] }), 'not-found');
+});
+
+// ---------- sourceAnchor ----------
+test('sourceAnchor: href hanya http(s), judul+snippet dipangkas', () => {
+  const ok = sourceAnchor({ url: 'https://a.id/x', title: 'Judul A', snippet: 'ringkasan' });
+  assert.equal(ok.href, 'https://a.id/x');
+  assert.equal(ok.title, 'Judul A');
+  assert.equal(ok.snippet, 'ringkasan');
+  const rel = sourceAnchor({ url: '/relative', title: 'Rel', snippet: '' });
+  assert.equal(rel.href, null); // non-http → bukan link
+  assert.equal(rel.snippet, '');
+  const noTitle = sourceAnchor({ url: 'http://b.id' });
+  assert.equal(noTitle.title, 'http://b.id'); // fallback ke URL bila tak ada judul
 });
