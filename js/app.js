@@ -153,6 +153,13 @@ function stopGeneration() {
   if (abortCtl) abortCtl.abort();
 }
 
+// Benarkah error ini hasil hentian user (tombol "Berhendi")? Ya bila user sudah
+// menekan (flag userStopped) ATAU fetch melempar AbortError. Error sistem
+// (network/server/badrequest) BUKAN hentian user → tampilkan tombol "Coba lagi".
+export function isUserStop(err, stopped = userStopped) {
+  return stopped || !!(err && err.name === 'AbortError');
+}
+
 // ===== BANTUAN ERROR =====
 // Tampilkan kode HTTP untuk error yang asalnya belum jelas,
 // supaya mudah dilaporkan/diagnosis.
@@ -1045,15 +1052,16 @@ async function generateGreeting() {
   }
 }
 
-// Tombol "Coba lagi" saat sapaan gagal — siswa tidak buntu.
-function showRetry() {
+// Tombol "Coba lagi" saat generasi gagal. Default = ulangi sapaan; jalur kirim
+// utama meneruskan callback pengirim ulang agar pesan siswa tidak hilang.
+function showRetry(onRetry = generateGreeting) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'btn btn--secondary btn--sm';
   btn.textContent = 'Coba lagi';
   btn.addEventListener('click', () => {
     btn.remove();
-    generateGreeting();
+    onRetry();
   });
   dom.messages.appendChild(btn);
 }
@@ -1162,7 +1170,8 @@ async function sendUserMessage(rawText, opts = {}) {
   } catch (err) {
     removeTyping(typing && typing.el);
     state.busy = false;
-    if (!answered) {
+    const stop = isUserStop(err);
+    if (!answered && !stop) {
       // Batalkan giliran yang gagal: riwayat API tetap bergantian rapi,
       // gelembung dibuang, dan ketikan siswa dikembalikan ke kotak input.
       state.messages.pop();
@@ -1176,11 +1185,18 @@ async function sendUserMessage(rawText, opts = {}) {
         state.startedAt = null;
         showEmptyState();
       }
+    } else if (stop) {
+      // User menekan Berhendi → simpan parsial, jangan buang balasan.
+      showToast('Balasan dihentikan.', 'info');
     }
-    const msgText = errorDisplayText(err);
-    addNotice(dom.messages, msgText, 'error');
-    showToast(msgText, 'error');
-    logApiError(err);
+    // Tombol "Coba lagi" HANYA untuk error SISTEM (bukan hentian user).
+    if (!stop) {
+      const msgText = errorDisplayText(err);
+      addNotice(dom.messages, msgText, 'error');
+      showToast(msgText, 'error');
+      showRetry(() => sendUserMessage());
+      logApiError(err);
+    }
   } finally {
     updateComposer();
     updateStats();

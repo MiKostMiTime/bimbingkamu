@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mapApiError, extractSources, isValidHttpUrl, truncateSnippet, classifyWebSearch } from '../js/api.js';
 import { sourceAnchor, webSearchStatusText, typingStatusText } from '../js/chat.js';
 import { readSSE } from '../js/providers.js';
-import { composerButtonState } from '../js/app.js';
+import { composerButtonState, isUserStop } from '../js/app.js';
 import { deriveTitle, syncSession, migrateLegacy, createSession, trimSessions } from '../js/sessions.js';
 import { extractMath } from '../js/math.js';
 import { itemsToText } from '../js/pdf.js';
@@ -226,4 +226,15 @@ test('composerButtonState: toggle Kirim/Berhendi', () => {
   assert.deepEqual(composerButtonState(false, ''), { label: 'Kirim', disabled: true });
   assert.deepEqual(composerButtonState(false, 'hai'), { label: 'Kirim', disabled: false });
   assert.deepEqual(composerButtonState(true, ''), { label: 'Berhendi', disabled: false });
+});
+
+// ---------- isUserStop ----------
+test('isUserStop: AbortError/flag = stop-user; error lain = sistem', () => {
+  // AbortError selalu dianggap hentian user (berhenti di tengah stream/fetch).
+  assert.equal(isUserStop({ name: 'AbortError' }), true);
+  // Error sistem tanpa flag stop → bukan hentian user (tampilkan retry).
+  assert.equal(isUserStop({ type: 'server' }, false), false);
+  assert.equal(isUserStop({ type: 'network' }, false), false);
+  // Error sistem tapi user sudah menekan Berhendi → hentian user.
+  assert.equal(isUserStop({ type: 'server' }, true), true);
 });
