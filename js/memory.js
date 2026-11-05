@@ -8,6 +8,10 @@ import { STORAGE_KEYS } from './config.js';
 
 const KEY = `${STORAGE_KEYS.prefix}memory`;
 
+// Versi skema memori yang disimpan ke localStorage. Ditambahkan agar update kode
+// tetap bisa membaca data lama (backward-compat) lewat loadMemory().
+export const MEMORY_SCHEMA_VERSION = 1;
+
 // localStorage global (browser) atau fallback in-memory (Node / saat nonaktif).
 let store = globalThis.localStorage;
 function rawGet(key, fallback) {
@@ -43,15 +47,19 @@ const DEFAULTS = {
 // ===== BACA (seed default bila kosong) =====
 export function loadMemory() {
   const saved = rawGet(KEY, null);
+  // Backward-compat: data lama disimpan sebagai {persona, notes} tanpa field 'v'.
+  const data = (saved && typeof saved.v === 'number')
+    ? saved
+    : { persona: saved && saved.persona, notes: saved && saved.notes };
   return {
-    persona: (saved && saved.persona) || DEFAULTS.persona,
-    notes: { ...(saved && saved.notes), ...DEFAULTS.notes },
+    persona: (data && data.persona) || DEFAULTS.persona,
+    notes: { ...(data && data.notes), ...DEFAULTS.notes },
   };
 }
 
 // ===== TULIS =====
 export function saveMemory(memory) {
-  return rawSet(KEY, memory);
+  return rawSet(KEY, { v: MEMORY_SCHEMA_VERSION, persona: memory.persona, notes: memory.notes || {} });
 }
 
 // ===== CATATAN KECIL (key -> value) — untuk personalisasi lintas sesi =====
