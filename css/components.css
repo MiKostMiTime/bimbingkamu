@@ -1052,6 +1052,50 @@
   animation-delay: 0.3s;
 }
 
+/* Status bertahap + kursor berkedip (Task 4). Menimpa .typing span generik
+   (titik-titik 6px + denyut) pada status & kursor, bukan titik-titik. */
+.typing__status {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  font-size: var(--text-caption);
+  line-height: 1.4;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: none; /* tak berdenyut seperti titik-titik */
+}
+
+.typing__caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin: 0 0 2px 3px;
+  padding: 0;
+  align-self: center;
+  background: var(--color-accent);
+  border-radius: 1px;
+}
+
+/* Kursor berkedip hanya saat menjawab (setCaret(true) → class is-on). */
+.typing__caret.is-on {
+  animation: caret-blink 1s steps(1) infinite;
+}
+
+@keyframes caret-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  50.01%,
+  100% {
+    opacity: 0;
+  }
+}
+
 @keyframes typing-pulse {
   0%,
   60%,

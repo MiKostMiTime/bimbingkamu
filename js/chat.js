@@ -371,13 +371,30 @@ export function removeTyping(el) {
 // Sisipkan indikator titik-titik (.typing) ke dalam bubble konten model agar
 // progress "sedang menulis" tetap terlihat saat model sedang berpikir,
 // yaitu sebelum token pertama muncul. Kembalikan elemen .typing agar bisa dihapus.
+// Teks status bertahap untuk indikator typing (logika murni, untuk diuji).
+export function typingStatusText(stage) {
+  return stage === 'answering' ? 'Sedang menjawab…' : 'Menghubungkan ke AI…';
+}
+
 export function insertBubbleTyping(content) {
   const typing = document.createElement('div');
   typing.className = 'typing';
   typing.setAttribute('aria-label', 'Tutor sedang menulis');
+  const status = document.createElement('span');
+  status.className = 'typing__status';
+  status.textContent = typingStatusText('connecting');
+  const caret = document.createElement('span');
+  caret.className = 'typing__caret';
+  caret.setAttribute('aria-hidden', 'true');
   for (let i = 0; i < 3; i += 1) typing.appendChild(document.createElement('span'));
-  content.appendChild(typing);
-  return typing;
+  typing.append(status, caret);
+  // Letakkan di ATAS konten (saudara .msg__content) agar tetap tampil saat
+  // streaming — renderRich() memimpa innerHTML content, jadi indikator di dalam
+  // akan hilang saat token pertama muncul.
+  const bubble = content.closest('.msg__bubble');
+  if (bubble) bubble.insertBefore(typing, content);
+  else content.prepend(typing);
+  return { el: typing, status, setCaret: (on) => caret.classList.toggle('is-on', on) };
 }
 
 // ===== EFEK TYPING PROGRESIF =====

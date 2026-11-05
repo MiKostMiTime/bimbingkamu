@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { mapApiError, extractSources, isValidHttpUrl, truncateSnippet, classifyWebSearch } from '../js/api.js';
-import { sourceAnchor } from '../js/chat.js';
+import { sourceAnchor, webSearchStatusText, typingStatusText } from '../js/chat.js';
 import { deriveTitle, syncSession, migrateLegacy, createSession, trimSessions } from '../js/sessions.js';
 import { extractMath } from '../js/math.js';
 import { itemsToText } from '../js/pdf.js';
@@ -183,4 +183,17 @@ test('sourceAnchor: href hanya http(s), judul+snippet dipangkas', () => {
   assert.equal(rel.snippet, '');
   const noTitle = sourceAnchor({ url: 'http://b.id' });
   assert.equal(noTitle.title, 'http://b.id'); // fallback ke URL bila tak ada judul
+});
+
+// ---------- webSearchStatusText ----------
+test('webSearchStatusText: label per-state (Indonesia)', () => {
+  assert.equal(webSearchStatusText('loading'), 'Mencari sumber web…');
+  assert.equal(webSearchStatusText('not-found'), 'Tidak ada sumber web.');
+  assert.equal(webSearchStatusText('unsupported'), 'Sumber web not didukung endpoint ini.');
+});
+
+// ---------- typingStatusText ----------
+test('typingStatusText: status bertahap (Menghubungkan → Menjawab)', () => {
+  assert.equal(typingStatusText('connecting'), 'Menghubungkan ke AI…');
+  assert.equal(typingStatusText('answering'), 'Sedang menjawab…');
 });

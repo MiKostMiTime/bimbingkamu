@@ -35,6 +35,7 @@ import {
   renderRich,
   showWebSearchStatus,
   applyWebSearchState,
+  typingStatusText,
   EDIT_ICON,
   COPY_ICON,
   DELETE_ICON,
@@ -1075,7 +1076,7 @@ async function sendUserMessage(rawText, opts = {}) {
 
   let answered = false;
   let built = null;
-  let dots = null;
+  let typing = null;
   try {
     // Ringkas riwayat bila mendekati batas konteks (hanya jalur kirim utama).
     const contents = await maybeSummarizeHistory() || buildContents();
@@ -1083,7 +1084,7 @@ async function sendUserMessage(rawText, opts = {}) {
     built = addModelMessage(dom.messages);
     // Tandai "sedang menulis" di dalam bubble (bukan bubble terpisah) agar
     // progress tetap terlihat saat model sedang berpikir, sebelum token pertama.
-    dots = insertBubbleTyping(built.content);
+    typing = insertBubbleTyping(built.content);
     // Saat websearch aktif, tampilkan "Mencari sumber web…" di bawah bubble selama
     // menjawab (loading). Setelah selesai → applyWebSearchState (sumber / tidak ada).
     if (state.settings.webSearch) showWebSearchStatus(built.col, 'loading');
@@ -1104,7 +1105,7 @@ async function sendUserMessage(rawText, opts = {}) {
       grounding: state.settings.webSearch,
       customProviders: state.settings.providers || [],
       onDelta: (acc) => {
-        if (!streamed) { dots.remove(); streamed = true; }
+        if (!streamed) { streamed = true; typing.status.textContent = typingStatusText('answering'); typing.setCaret(true); }
         const words = (acc.match(/\S+/g) || []).length;
         const now = performance.now();
         // Paint inkremental: maks tiap ~50 ms atau ~3 kata → rasa token-by-token,
@@ -1120,12 +1121,12 @@ async function sendUserMessage(rawText, opts = {}) {
     state.messages.push(modelMsg);
     answered = true;
     if (streamed) {
-      dots.remove(); // jaga-gaga: titik-titik sudah/harus hilang sebelum render akhir
+      typing.el.remove(); // hapus indikator + status setelah stream final
       renderRich(built.content, reply); // render final (markdown lengkap)
       state.busy = false;
       scrollToEnd(dom.chatScroll);
     } else {
-      dots.remove();
+      typing.el.remove();
       streamReply(built.content, reply, built.msg); // fallback: endpoint tanpa SSE
     }
     // Sumber web per-jawaban: loading sudah ditampilkan; kini tampilkan keadaan akhir.
@@ -1135,7 +1136,7 @@ async function sendUserMessage(rawText, opts = {}) {
     stampModelBubble(built.msg);
     buildModelActions(built.col, built.msg);
   } catch (err) {
-    removeTyping(dots);
+    removeTyping(typing && typing.el);
     state.busy = false;
     if (!answered) {
       // Batalkan giliran yang gagal: riwayat API tetap bergantian rapi,
