@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { mapApiError, extractSources, isValidHttpUrl, truncateSnippet, classifyWebSearch } from '../js/api.js';
 import { sourceAnchor, webSearchStatusText, typingStatusText } from '../js/chat.js';
 import { readSSE } from '../js/providers.js';
+import { composerButtonState } from '../js/app.js';
 import { deriveTitle, syncSession, migrateLegacy, createSession, trimSessions } from '../js/sessions.js';
 import { extractMath } from '../js/math.js';
 import { itemsToText } from '../js/pdf.js';
@@ -218,4 +219,11 @@ test('readSSE: parsial text dikembalikan saat abort di tengah stream', async () 
   const out = await readSSE(res, () => {}, ac.signal);
   assert.equal(out.text, 'Halo');
   assert.ok(Array.isArray(out.sources));
+});
+
+// ---------- composerButtonState ----------
+test('composerButtonState: toggle Kirim/Berhendi', () => {
+  assert.deepEqual(composerButtonState(false, ''), { label: 'Kirim', disabled: true });
+  assert.deepEqual(composerButtonState(false, 'hai'), { label: 'Kirim', disabled: false });
+  assert.deepEqual(composerButtonState(true, ''), { label: 'Berhendi', disabled: false });
 });

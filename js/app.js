@@ -56,7 +56,11 @@ import {
 } from './ui.js';
 
 // ===== REFERENSI DOM =====
-const $ = (id) => document.getElementById(id);
+// Kencang ke `document` hanya bila browser; di Node (uji unit) kembalikan null
+// agar modul bisa diimpor tanpa merujuk elemen yang belum ada.
+const $ = (id) => (typeof document !== 'undefined' ? document.getElementById(id) : null);
+// Versi querySelectorAll: array kosong bila tak ada DOM.
+const $$ = (sel) => (typeof document !== 'undefined' ? Array.from(document.querySelectorAll(sel)) : []);
 
 // Escape HTML untuk teks + atribut agar nama/URL/kunci endpoint aman disisipkan
 // ke innerHTML daftar endpoint tanpa risiko injeksi markup.
@@ -86,7 +90,7 @@ const dom = {
   materiCount: $('materiCount'),
   materiClear: $('materiClear'),
   materiFileList: $('materiFileList'),
-  modeButtons: Array.from(document.querySelectorAll('#modeSegment .segmented__btn')),
+  modeButtons: $$('#modeSegment .segmented__btn'),
   level: $('levelRange'),
   levelValue: $('levelValue'),
   levelDesc: $('levelDesc'),
@@ -97,7 +101,7 @@ const dom = {
   connStatus: $('headerConnStatus'),
   webSearchToggle: $('webSearchToggle'),
   toneSegment: $('toneSegment'),
-  toneButtons: Array.from(document.querySelectorAll('#toneSegment .segmented__btn')),
+  toneButtons: $$('#toneSegment .segmented__btn'),
   timer: $('timerValue'),
   turns: $('turnValue'),
   tokenTotal: $('tokenTotal'),
@@ -136,6 +140,18 @@ const state = {
   activeMs: 0, // waktu belajar aktif (jeda saat idle / tab tersembunyi)
   busy: false,
 };
+
+// ===== GENERASI (abort / Berhendi) =====
+// Controller + flag untuk menghentikan generasi model di tengah jalan (tombol
+// "Berhendi"). abortCtl di-thread ke providerChat → fetch (signal), sehingga
+// berhenti SEBENARNYA (bukan hanya melewati animasi). readSSE mengembalikan
+// teks parsial saat abort, jadi jawaban setengah jalan tetap tersimpan.
+let abortCtl = null;
+let userStopped = false;
+function stopGeneration() {
+  userStopped = true;
+  if (abortCtl) abortCtl.abort();
+}
 
 // ===== BANTUAN ERROR =====
 // Tampilkan kode HTTP untuk error yang asalnya belum jelas,
@@ -972,6 +988,8 @@ async function generateGreeting() {
     built = addModelMessage(dom.messages);
     let streamed = false;
     let lastRenderAt = 0, renderedWords = 0; // throttle paint streaming (token-by-token)
+    userStopped = false;
+    abortCtl = new AbortController();
     const { text: replyText, tokens, sources } = await providerChat(state.settings.provider, {
       apiKey: activeApiKey(),
       model: state.settings.model,
@@ -986,6 +1004,7 @@ async function generateGreeting() {
       thinkingLevel: thinkingLevelFor(),
       grounding: false,
       customProviders: state.settings.providers || [],
+      signal: abortCtl.signal,
       onDelta: (acc) => {
         streamed = true;
         const words = (acc.match(/\S+/g) || []).length;
@@ -1021,6 +1040,8 @@ async function generateGreeting() {
     updateComposer();
     updateStats();
     saveActiveSession();
+    abortCtl = null;
+    userStopped = false;
   }
 }
 
@@ -1088,6 +1109,8 @@ async function sendUserMessage(rawText, opts = {}) {
     // Saat websearch aktif, tampilkan "Mencari sumber web…" di bawah bubble selama
     // menjawab (loading). Setelah selesai → applyWebSearchState (sumber / tidak ada).
     if (state.settings.webSearch) showWebSearchStatus(built.col, 'loading');
+    userStopped = false;
+    abortCtl = new AbortController();
     let streamed = false;
     let lastRenderAt = 0, renderedWords = 0; // throttle paint streaming (token-by-token)
     const { text: reply, tokens, sources } = await providerChat(state.settings.provider, {
@@ -1104,6 +1127,7 @@ async function sendUserMessage(rawText, opts = {}) {
       thinkingLevel: thinkingLevelFor(),
       grounding: state.settings.webSearch,
       customProviders: state.settings.providers || [],
+      signal: abortCtl.signal,
       onDelta: (acc) => {
         if (!streamed) { streamed = true; typing.status.textContent = typingStatusText('answering'); typing.setCaret(true); }
         const words = (acc.match(/\S+/g) || []).length;
@@ -1161,6 +1185,8 @@ async function sendUserMessage(rawText, opts = {}) {
     updateComposer();
     updateStats();
     saveActiveSession();
+    abortCtl = null;
+    userStopped = false;
   }
 }
 
@@ -1567,8 +1593,18 @@ function updateStats() {
   renderTokenStat();
 }
 
+// Reducer murni: tombol kirim ↔ Berhendi. Saat busy → "Berhendi" (aktif, untuk
+// berhenti); saat idle → "Kirim" (nyala bila ada teks, mati bila kosong).
+export function composerButtonState(busy, hasText) {
+  return busy ? { label: 'Berhendi', disabled: false } : { label: 'Kirim', disabled: !hasText };
+}
+
 function updateComposer() {
-  dom.send.disabled = state.busy || !dom.input.value.trim();
+  const btn = composerButtonState(state.busy, dom.input.value.trim());
+  dom.send.disabled = btn.disabled;
+  dom.send.classList.toggle('is-stopping', state.busy);
+  const label = dom.send.querySelector('.btn__label');
+  if (label) label.textContent = btn.label;
 }
 
 // ===== RESTORE (awal aplikasi) =====
@@ -1845,7 +1881,10 @@ function bindEvents() {
       sendUserMessage();
     }
   });
-  dom.send.addEventListener('click', () => sendUserMessage());
+  dom.send.addEventListener('click', () => {
+    if (state.busy) stopGeneration();
+    else sendUserMessage();
+  });
   // Ekspor kini menyatu di bar riwayat (renderSessionList). Tombol header lama
   // dihapus; jaga-kompatibilitas bila #exportBtn muncul lagi.
   if (dom.exportBtn) dom.exportBtn.addEventListener('click', exportCurrent);
@@ -2023,7 +2062,9 @@ function init() {
   }
 }
 
-init();
+// Jalankan inialisasi hanya bila ada DOM (browser). Di Node (uji unit) di-
+// lewati agar modul bisa diimpor tanpa merujuk elemen yang belum ada.
+if (typeof document !== 'undefined') init();
 
 // ===== HUKUM UJIAN (test hook) — ekspos alur agar bisa dipanggil dari Node.
 // generateGreeting / sendUserMessage = titik masuk alur kirim model; state =
