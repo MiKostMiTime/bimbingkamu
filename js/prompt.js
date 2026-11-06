@@ -194,6 +194,20 @@ function materiBlock(materi, webSearch = false) {
   ].join('\n');
 }
 
+// ===== BLOK MATERI SEBAGAI PESAN TERPISAH =====
+// Mengembalikan { role: 'user', content } berisi blok materi ter-fence, agar
+// materi / hasil websearch jadi *data bacaan* pada slot terpisah dari instruksi
+// (system prompt). Pemisahan struktur ini memperkuat pertahanan anti-injeksi:
+// model melihat instruksi di pesan `system`, lalu data di pesan `user` berikutnya
+// — bukan tercampur dalam satu blok yang harus dibedakan mana instruksi, mana data.
+export function buildMaterialMessage(materi, webSearch = false) {
+  const trimmed = (materi || '').trim();
+  if (!trimmed) return null;
+  // materiBlock() sudah mengembalikan string utuh (sudah di-join), jadi tidak
+  // di-join lagi.
+  return { role: 'user', content: materiBlock(materi, webSearch) };
+}
+
 // ===== BLOK GAYA BICARA (tone) =====
 // Disisipkan setelah PERSONA. Persona bawaan sudah santai → tone mengatur
 // derajat-nya saja; metode Socratic tetap dipakai.
@@ -210,7 +224,9 @@ function toneBlock(tone = 'santai') {
 }
 
 // ===== SYSTEM PROMPT UTAMA =====
-export function buildSystemPrompt({ materi, mode, level, webSearch = false, tone = 'santai' }) {
+export function buildSystemPrompt({
+  materi, mode, level, webSearch = false, tone = 'santai', includeMaterial = true,
+}) {
   const aturan = [
     mode === 'penjelasan'
       ? '1. Pola mengajar: JELASKAN TUNTAS. Sampaikan penjelasan lengkap dan runtut (apa, mengapa, bagaimana, contoh/analogi) dalam satu balasan; pertanyaan cek pemahaman di akhir hanya opsional, bukan wajib.'
@@ -237,8 +253,7 @@ export function buildSystemPrompt({ materi, mode, level, webSearch = false, tone
     '',
     toneBlock(tone),
     '',
-    materiBlock(materi, webSearch),
-    '',
+    ...(includeMaterial ? [materiBlock(materi, webSearch), ''] : []),
     '## ATURAN WAJIB',
     ...aturan,
     '',

@@ -283,7 +283,7 @@ export async function listModels(apiKey, provider) {
 // mendukung otomatis jatuh ke jalur non-stream biasa.
 // Mengembalikan Promise<{ text, tokens:{prompt,completion,total}, sources }>.
 export async function chatCompletion({
-  provider, apiKey, model, systemPrompt, contents,
+  provider, apiKey, model, systemPrompt, contents, contextMessages,
   maxTokens = 8192, thinkingLevel, grounding, onDelta, signal,
 }) {
   if (!provider || !provider.baseUrl) {
@@ -291,6 +291,10 @@ export async function chatCompletion({
   }
   const messages = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+  // Blok materi/konteks (data bacaan) diletakkan SETELAH instruksi `system`
+  // dan SEBELUM riwayat, sebagai pesan `user` terpisah. Pemisahan struktur ini
+  // memperkuat anti-injeksi: model membaca instruksi dulu, lalu data di slot lain.
+  for (const c of contextMessages || []) messages.push(c);
   for (const m of contents || []) messages.push({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text });
 
   const body = { model, messages, max_tokens: maxTokens };

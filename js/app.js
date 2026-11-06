@@ -11,7 +11,7 @@ import { selectRelevantParagraphs } from './rag.js';
 import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
 import { extractPdfText } from './pdf.js';
 import { extractDocxText } from './docx.js';
-import { buildSystemPrompt, buildOpeningPrompt } from './prompt.js';
+import { buildSystemPrompt, buildMaterialMessage, buildOpeningPrompt } from './prompt.js';
 import {
   createSession,
   syncSession,
@@ -1001,6 +1001,7 @@ async function generateGreeting() {
       apiKey: activeApiKey(),
       model: state.settings.model,
       systemPrompt: buildSystemPrompt({
+        includeMaterial: false,
         materi: buildMateri(),
         mode: state.settings.mode,
         level: state.settings.level,
@@ -1010,6 +1011,7 @@ async function generateGreeting() {
       contents: [opening],
       thinkingLevel: thinkingLevelFor(),
       grounding: false,
+      contextMessages: materialContext(buildMateri(), false),
       customProviders: state.settings.providers || [],
       signal: abortCtl.signal,
       onDelta: (acc) => {
@@ -1125,6 +1127,7 @@ async function sendUserMessage(rawText, opts = {}) {
       apiKey: activeApiKey(),
       model: state.settings.model,
       systemPrompt: buildSystemPrompt({
+        includeMaterial: false,
         materi: buildMateriFor(text),
         mode: state.settings.mode,
         level: state.settings.level,
@@ -1134,6 +1137,7 @@ async function sendUserMessage(rawText, opts = {}) {
       contents,
       thinkingLevel: thinkingLevelFor(),
       grounding: state.settings.webSearch,
+      contextMessages: materialContext(buildMateriFor(text), state.settings.webSearch),
       customProviders: state.settings.providers || [],
       signal: abortCtl.signal,
       onDelta: (acc) => {
@@ -1266,6 +1270,7 @@ async function regenerateLast() {
       apiKey: activeApiKey(),
       model: state.settings.model,
       systemPrompt: buildSystemPrompt({
+        includeMaterial: false,
         materi: buildMateri(),
         mode: state.settings.mode,
         level: state.settings.level,
@@ -1275,6 +1280,7 @@ async function regenerateLast() {
       contents: plan.contents,
       thinkingLevel: thinkingLevelFor(),
       grounding: state.settings.webSearch,
+      contextMessages: materialContext(buildMateri(), state.settings.webSearch),
       customProviders: state.settings.providers || [],
     });
     removeTyping(typing);
@@ -1330,6 +1336,7 @@ async function regenerateFrom(editIdx) {
 
   // systemPrompt diambil ulang tiap panggilan agar selalu sesuai setting terkini.
   const systemPrompt = () => buildSystemPrompt({
+    includeMaterial: false,
     materi: buildMateri(), mode: state.settings.mode,
     level: state.settings.level, webSearch: state.settings.webSearch, tone: state.settings.tone,
   });
@@ -1341,6 +1348,7 @@ async function regenerateFrom(editIdx) {
         apiKey: activeApiKey(), model: state.settings.model, systemPrompt: systemPrompt(),
         contents: reg.contents, thinkingLevel: thinkingLevelFor(),
         grounding: state.settings.webSearch, customProviders: state.settings.providers || [],
+        contextMessages: materialContext(buildMateri(), state.settings.webSearch),
       });
       const prev = state.messages[reg.modelIndex];
       // tangkap tokens → simpan ke metadata (footer + updateStats ikut).
@@ -1454,6 +1462,15 @@ function buildMateriFor(query) {
   if (!full || !query) return full; // tanpa query -> seluruh materi (pembukaan)
   const selected = selectRelevantParagraphs(full, query, 6);
   return selected || full; // fallback: bila tak ada paragraf relevan
+}
+
+// Helper: kemas materi + hasil websearch ke slot konteks terpisah (data bacaan),
+// agar bisa dilewatkan ke providerChat() sebagai `contextMessages`. Dipisah dari
+// systemPrompt (includeMaterial: false) memperkuat anti-injeksi: instruksi dan data
+// tidak tercampur dalam satu blok. Mengembalikan array { role:'user', content }.
+function materialContext(materi, webSearch = false) {
+  const msg = buildMaterialMessage(materi, webSearch);
+  return msg ? [msg] : [];
 }
 
 function renderMateriFiles() {
