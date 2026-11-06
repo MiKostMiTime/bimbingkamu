@@ -14,7 +14,8 @@ const MESSAGES = {
   model: 'Model ini tidak tersedia di endpoint. Coba pilih model lain dari daftar.',
   server: 'Endpoint sedang sibuk. Coba lagi beberapa saat.',
   unknown: 'Terjadi kesalahan tak terduga. Coba lagi beberapa saat.',
-  badrequest: 'Permintaan ditolak endpoint. Materi mungkin terlalu panjang, atau model tidak mendukung fitur itu.',
+  badrequest: 'Permintaan ditolak endpoint. Kemungkinan model ini tidak kompatibel dengan format percakapan — coba model lain (mis. llama-3.3-70b-versatile di Groq), atau kurangi materi.',
+  toobig: 'Materi atau riwayat percakapan terlalu besar untuk dikirim ke endpoint. Kurangi ukuran materi (hasil upload) atau ringkas percakapan, lalu coba lagi.',
   truncated: 'Jawaban terpotong karena terlalu panjang. Minta tutor melanjutkan.',
 };
 
@@ -40,6 +41,8 @@ export function mapApiError(status, apiMessage = '') {
   if (status === 429) return { type: 'quota', message: MESSAGES.quota, ...detail };
   if (status === 0) return { type: 'network', message: MESSAGES.network, ...detail };
   if (status === 404) return { type: 'model', message: MESSAGES.model, ...detail };
+  // 413 = request entity too large: materi/riwayat terlalu besar untuk endpoint.
+  if (status === 413) return { type: 'badrequest', message: MESSAGES.toobig, ...detail };
   if (status >= 500) return { type: 'server', message: MESSAGES.server, ...detail };
 
   return { type: 'unknown', message: MESSAGES.unknown, ...detail };

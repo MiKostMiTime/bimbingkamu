@@ -291,11 +291,18 @@ export async function chatCompletion({
   }
   const messages = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
-  // Blok materi/konteks (data bacaan) diletakkan SETELAH instruksi `system`
-  // dan SEBELUM riwayat, sebagai pesan `user` terpisah. Pemisahan struktur ini
-  // memperkuat anti-injeksi: model membaca instruksi dulu, lalu data di slot lain.
-  for (const c of contextMessages || []) messages.push(c);
-  for (const m of contents || []) messages.push({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text });
+  const history = (contents || []).map((m) => ({ role: m.role === 'model' ? 'assistant' : 'user', content: m.text }));
+  // Konteks (materi ter-fence) digabung ke pesan `user` PERTAMA agar tak ada dua
+  // pesan `user` berurutan — sebagian model/endpoint menolak role berurutan (400).
+  // Pemisahan anti-injeksi tetap terjaga: instruksi di `system`, data di `user`.
+  const ctx = contextMessages || [];
+  if (ctx.length && history.length && history[0].role === 'user') {
+    const block = ctx.map((c) => c.content).join('\n\n');
+    history[0] = { ...history[0], content: `${block}\n\n${history[0].content}` };
+  } else {
+    messages.push(...ctx);
+  }
+  messages.push(...history);
 
   const body = { model, messages, max_tokens: maxTokens };
   const wantStream = typeof onDelta === 'function';
@@ -308,6 +315,7 @@ export async function chatCompletion({
   }
 
   let res;
+  let streamStripped = false; // fallback 413: stream dilepas → respons jadi JSON
   try {
     res = await buildChatRequest(provider, apiKey, body, grounding, signal);
   } catch (err) {
@@ -317,24 +325,40 @@ export async function chatCompletion({
   if (!res.ok) {
     let apiMessage = '';
     try { apiMessage = (await res.json()).error?.message || ''; } catch {}
-    // Graceful degradation: tools → coba ulang tanpa tools bila request-ditolak (400/422).
-    const bodyStr = JSON.stringify(body);   // body sudah punya tools (dari buildChatRequest)
-    const withoutTools = { ...JSON.parse(bodyStr) };
-    delete withoutTools.tools;
-    if ((res.status === 400 || res.status === 422) && body.tools && !withoutTools.tools) {
+    // ===== KASCADE KOMPATIBILITAS (400/413/422) =====
+    // Sebagian model/endpoint menolak field tertentu (tools, stream_options,
+    // max_tokens terlalu besar) atau body terlalu besar (413). Lucuti field
+    // bertahap, satu per satu, sampai request diterima atau tak ada lagi yang
+    // bisa dilepas — endpoint yang kompatibel tak pernah menyentuh jalur ini.
+    let cur = body;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      if (res.ok || !(res.status === 400 || res.status === 413 || res.status === 422)) break;
+      // Urutan lucut: penyebab 400 paling umum dulu.
+      let fb = null;
+      if (cur.tools) { fb = { ...cur }; delete fb.tools; }
+      else if (cur.stream_options) { fb = { ...cur }; delete fb.stream_options; }
+      else if (cur.max_tokens && cur.max_tokens > 2048) fb = { ...cur, max_tokens: 2048 };
+      else if (cur.max_tokens) { fb = { ...cur }; delete fb.max_tokens; }
+      else if (res.status === 413 && cur.stream) { fb = { ...cur }; delete fb.stream; streamStripped = true; }
+      if (!fb) break;
+      cur = fb;
       try {
         res = await fetch(`${provider.baseUrl}${provider.chatPath}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(apiKey) },
-          body: JSON.stringify(withoutTools),
+          body: JSON.stringify(cur), signal,
         });
       } catch { throw { ...mapApiError(0) }; }
+      if (!res.ok) {
+        try { apiMessage = (await res.json()).error?.message || apiMessage; } catch {}
+      }
     }
     if (!res.ok) throw { ...mapApiError(res.status, apiMessage) };
   }
 
   // Jalur SSE: baca data: {...} per chunk, akumulasi delta.content,
   // panggil onDelta live, kumpulkan usage + SUMBER grounding dari chunk.
-  if (wantStream && res.body && typeof res.body.getReader === 'function') {
+  // (Lewati bila fallback melepas stream — respons kini JSON biasa.)
+  if (wantStream && !streamStripped && res.body && typeof res.body.getReader === 'function') {
     const streamed = await readSSE(res, onDelta, signal);
     return {
       text: streamed.text.trim(),

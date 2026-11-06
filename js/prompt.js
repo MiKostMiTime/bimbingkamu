@@ -4,6 +4,7 @@
 // =========================================================
 import { getModeLabel } from './config.js';
 import { buildMemoryBlock } from './memory.js';
+import { splitParagraphs } from './rag.js';
 
 // ===== PERSONA & GAYA GLOBAL =====
 // Persona didefinisikan TEGAS dan terpusat di sini agar setiap balasan
@@ -200,12 +201,34 @@ function materiBlock(materi, webSearch = false) {
 // (system prompt). Pemisahan struktur ini memperkuat pertahanan anti-injeksi:
 // model melihat instruksi di pesan `system`, lalu data di pesan `user` berikutnya
 // — bukan tercampur dalam satu blok yang harus dibedakan mana instruksi, mana data.
-export function buildMaterialMessage(materi, webSearch = false) {
-  const trimmed = (materi || '').trim();
-  if (!trimmed) return null;
+export function buildMaterialMessage(materi, webSearch = false, maxBytes = 60 * 1024) {
+  const trimmedRaw = (materi || '').trim();
+  if (!trimmedRaw) return null;
+  // Batas ukuran agar request ke endpoint tak terlalu besar (cegah HTTP 413 /
+  // "entity too large" saat materi upload sangat tebal). Pemkasan menjaga
+  // paragraf tetap utuh agar hasil tetap terbaca.
+  const bytes = new TextEncoder().encode(trimmedRaw).length;
+  const content = bytes > maxBytes ? capMaterialAtParagraphs(trimmedRaw, maxBytes) : trimmedRaw;
   // materiBlock() sudah mengembalikan string utuh (sudah di-join), jadi tidak
   // di-join lagi.
-  return { role: 'user', content: materiBlock(materi, webSearch) };
+  return { role: 'user', content: materiBlock(content, webSearch) };
+}
+
+// Pertahankan paragraf utuh dari awal sampai budget maxBytes tercapai, lalu beri
+// penanda pemkasan agar model tahu data dibatasi (bukan selesai). Dipakai untuk
+// mencegah request terlalu besar (HTTP 413) saat materi upload sangat tebal.
+function capMaterialAtParagraphs(text, maxBytes) {
+  const enc = new TextEncoder();
+  const parts = splitParagraphs(text);
+  const kept = [];
+  let used = 0;
+  for (const p of parts) {
+    const add = enc.encode(p).length;
+    if (used + add > maxBytes && kept.length) break; // jaga paragraf tetap utuh
+    used += add;
+    kept.push(p);
+  }
+  return `${kept.join('\n\n')}\n\n[…materi dipkas untuk menjaga ukuran request ke model]`;
 }
 
 // ===== BLOK GAYA BICARA (tone) =====

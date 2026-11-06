@@ -161,7 +161,7 @@ test('chatCompletion: POST format [OI] + parse content & usage', async () => {
   assert.ok(calls[0].init.headers.Authorization === 'Bearer K');
 });
 
-test('chatCompletion: contextMessages disisipkan SETELAH system, SEBELUM riwayat', async () => {
+test('chatCompletion: konteks digabung ke user pertama (tanpa role user berurutan)', async () => {
   const calls = stubFetch(() => okRes({ choices: [{ message: { role: 'assistant', content: 'ok' } }], usage: {} }));
   await chatCompletion({
     provider: LOCAL, apiKey: 'K', model: 'm', systemPrompt: 'instruksi',
@@ -176,13 +176,31 @@ test('chatCompletion: contextMessages disisipkan SETELAH system, SEBELUM riwayat
     ],
   });
   const body = JSON.parse(calls[0].init.body);
+  // Konteks ditempel di depan pesan user pertama — tidak ada dua `user` berurutan
+  // (sebagian model/endpoint menolak role berurutan dengan 400).
   assert.deepEqual(body.messages, [
-    { role: 'system', content: 'instruksi' },   // system tetap pertama (kompatibel OpenAI)
-    { role: 'user', content: 'MATERI_A' },       // data bacaan setelah instruksi
-    { role: 'user', content: 'MATERI_B' },
-    { role: 'user', content: 'q1' },             // riwayat pengguna
-    { role: 'assistant', content: 'a1' },        // riwayat model (role dimap ke assistant)
+    { role: 'system', content: 'instruksi' },                    // instruksi tetap pertama
+    { role: 'user', content: 'MATERI_A\n\nMATERI_B\n\nq1' },     // konteks + pertanyaan digabung
+    { role: 'assistant', content: 'a1' },                        // riwayat model (role dimap)
     { role: 'user', content: 'q2' },
+  ]);
+  // Invariant: tak ada dua role sama berurutan.
+  for (let i = 1; i < body.messages.length; i++) {
+    assert.notEqual(body.messages[i].role, body.messages[i - 1].role, `role berurutan di indeks ${i}`);
+  }
+});
+
+test('chatCompletion: konteks tanpa riwayat → tetap pesan terpisah setelah system', async () => {
+  const calls = stubFetch(() => okRes({ choices: [{ message: { content: 'ok' } }], usage: {} }));
+  await chatCompletion({
+    provider: LOCAL, apiKey: 'K', model: 'm', systemPrompt: 'instruksi',
+    contents: [],
+    contextMessages: [{ role: 'user', content: 'MATERI_A' }],
+  });
+  const body = JSON.parse(calls[0].init.body);
+  assert.deepEqual(body.messages, [
+    { role: 'system', content: 'instruksi' },
+    { role: 'user', content: 'MATERI_A' },
   ]);
 });
 
@@ -212,8 +230,57 @@ test('chatCompletion: grounding → tools bila didukung; graceful degradation 40
   assert.equal(n, 2);                    // benar-benar 2 panggilan (tools → tanpa tools)
 });
 
-test('chatCompletion: sources dari groundingMetadata bila ada', async () => {
-  globalThis.fetch = async () => okRes({
+test('chatCompletion: kascade 400 — tools → stream_options → max_tokens dilucuti bertahap', async () => {
+  const bodies = [];
+  globalThis.fetch = async (url, init) => {
+    const b = JSON.parse(init.body);
+    bodies.push(b);
+    if (b.tools) return { ok: false, status: 400, json: async () => ({ error: { message: 'tools not supported' } }) };
+    if (b.stream_options) return { ok: false, status: 400, json: async () => ({ error: { message: 'stream_options unsupported' } }) };
+    if (b.max_tokens === 8192) return { ok: false, status: 400, json: async () => ({ error: { message: 'max_tokens too large' } }) };
+    return okRes({ choices: [{ message: { content: 'akhirnya' } }], usage: { total_tokens: 2 } });
+  };
+  const r = await chatCompletion({
+    provider: { ...LOCAL, supportsGrounding: true }, apiKey: 'K', model: 'm', systemPrompt: 's',
+    contents: [{ role: 'user', text: 'x' }], grounding: true,
+    onDelta: (acc) => {}, // minta stream + stream_options
+  });
+  assert.equal(r.text, 'akhirnya');
+  assert.equal(bodies.length, 4); // tools → stream_options → max_tokens 8192 → sukses
+  assert.equal(bodies[1].tools, undefined);
+  assert.equal(bodies[2].stream_options, undefined);
+  assert.equal(bodies[3].max_tokens, 2048);
+  assert.equal(bodies[3].stream, true); // stream TIDAK dilepas di tahap-tahap ini
+});
+
+test('chatCompletion: 413 → kascade sampai stream dilepas; respons JSON diparse normal', async () => {
+  const bodies = [];
+  globalThis.fetch = async (url, init) => {
+    const b = JSON.parse(init.body);
+    bodies.push(b);
+    if (b.stream) return { ok: false, status: 413, json: async () => ({ error: { message: 'request entity too large' } }) };
+    return okRes({ choices: [{ message: { content: 'non-stream sukses' } }], usage: { total_tokens: 1 } });
+  };
+  const r = await chatCompletion({
+    provider: LOCAL, apiKey: 'K', model: 'm', systemPrompt: 's',
+    contents: [{ role: 'user', text: 'x' }],
+    onDelta: () => {}, // awalnya minta stream
+  });
+  assert.equal(r.text, 'non-stream sukses');
+  const last = bodies[bodies.length - 1];
+  assert.equal(last.stream, undefined);     // stream dilepas di tahap 413
+  assert.equal(last.max_tokens, undefined); // max_tokens ikut dilucuti lebih dulu
+});
+
+test('chatCompletion: 400 model strict tetap gagal dengan pesan kompatibilitas setelah kascade habis', async () => {
+  globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: { message: 'invalid request' } }) });
+  await assert.rejects(
+    () => chatCompletion({ provider: LOCAL, apiKey: 'K', model: 'm', systemPrompt: 's', contents: [{ role: 'user', text: 'x' }] }),
+    (e) => e.type === 'badrequest' && /kompatibel/.test(e.message),
+  );
+});
+
+test('chatCompletion: sources dari groundingMetadata bila ada', async () => {  globalThis.fetch = async () => okRes({
     choices: [{ message: { content: 'jawaban' } }],
     candidates: [{ groundingMetadata: { groundingChunks: [{ web: { uri: 'https://a.id', title: 'A' } }] } }],
   });
