@@ -29,6 +29,12 @@ test('401/403 auth, 429 quota, 0 network, 404 model, 503 server', () => {
   assert.equal(mapApiError(404).type, 'model');
   assert.equal(mapApiError(503).type, 'server');
 });
+test('413 = entity too large → badrequest + pesan jelas (bukan unknown)', () => {
+  const e = mapApiError(413);
+  assert.equal(e.type, 'badrequest');
+  assert.equal(e.status, 413);
+  assert.match(e.message, /terlalu besar/);
+});
 
 // ---------- extractSources ----------
 test('extractSources: snippet diambil dari groundingSupports', () => {
@@ -163,6 +169,29 @@ test('buildMaterialMessage: kemas materi → {role:user, content ter-fence}; nul
   // webSearch true mengubah narasi sumber.
   const msgWeb = buildMaterialMessage('x', true);
   assert.match(msgWeb.content, /sumber UTAMA/);
+});
+test('buildMaterialMessage: pemkasan ukuran (cegah HTTP 413) — paragraf utuh + penanda', () => {
+  // 5 paragraf berbeda, dipisah baris kosong (splitParagraphs).
+  const materi = [
+    'PARAGRAF_SATU_UNIK',
+    'PARAGRAF_DUA_UNIK',
+    'PARAGRAF_TIGA_UNIK',
+    'PARAGRAF_EMPAT_UNIK',
+    'PARAGRAF_LIMA_UNIK',
+  ].join('\n\n');
+  // maxBytes kecil → harus memkas (paragraf terakhir / PARAGRAF_LIMA_UNIK terbuang).
+  const capped = buildMaterialMessage(materi, false, 60);
+  assert.ok(capped, 'tetap mengembalikan pesan saat dipkas');
+  assert.ok(capped.content.includes('[…materi dipkas untuk menjaga ukuran request ke model]'));
+  assert.ok(!capped.content.includes('PARAGRAF_LIMA_UNIK'), 'paragraf terakhir harus terbuang');
+  // Paragraf awal yang masih muat tetap ada.
+  assert.match(capped.content, /PARAGRAF_SATU_UNIK/);
+  // maxBytes besar → semua paragraf utuh, tanpa penanda pemkasan.
+  const full = buildMaterialMessage(materi, false, 10 * 1024);
+  assert.ok(!full.content.includes('dipkas untuk menjaga ukuran'));
+  for (const p of ['PARAGRAF_SATU_UNIK', 'PARAGRAF_DUA_UNIK', 'PARAGRAF_TIGA_UNIK', 'PARAGRAF_EMPAT_UNIK', 'PARAGRAF_LIMA_UNIK']) {
+    assert.match(full.content, new RegExp(p));
+  }
 });
 
 test('buildSystemPrompt({ includeMaterial: false }) menghilangkan blok MATERI tapi tetap punya rule #8', () => {
