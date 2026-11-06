@@ -1,4 +1,4 @@
-// TanyaBukan — PWA CLIENT
+// BimbingKamu — PWA CLIENT
 export function shouldPromptUpdate(swState) {
   // swState: { installing?, installed?, waiting?, activating? } (boolean-ish)
   return !!(swState && swState.waiting);

@@ -1,5 +1,5 @@
 // =========================================================
-// TanyaBukan — MATH (KaTeX)
+// BimbingKamu — MATH (KaTeX)
 // Render rumus LaTeX ($...$ / $$...$$) dari balasan Gemini
 // agar tampil sebagai rumus visual, bukan teks mentah.
 // KaTeX (version dipin) dimuat on-demand hanya saat ada

@@ -1,5 +1,5 @@
 // =========================================================
-// TanyaBukan — SESSIONS
+// BimbingKamu — SESSIONS
 // Logika murni store sesi (tanpa DOM): buat, judul, urut,
 // batasi, migrasi dari format lama. Dipakai app.js.
 // =========================================================
@@ -73,7 +73,7 @@ export function trimSessions(sessions, max = MAX_SESSIONS) {
   return sortSessions(sessions).slice(0, max);
 }
 
-// Gabungkan sesi tunggal versi lama (tanyabukan.session) ke daftar baru.
+// Gabungkan sesi tunggal versi lama (bimbingkamu.session) ke daftar baru.
 export function migrateLegacy(legacy, existing) {
   const list = Array.isArray(existing) ? existing : [];
   if (!legacy || !Array.isArray(legacy.messages) || !legacy.messages.length) return list;

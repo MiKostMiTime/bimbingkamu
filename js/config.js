@@ -1,9 +1,9 @@
 // =========================================================
-// TanyaBukan — KONSTANTA & STORAGE KEYS
+// BimbingKamu — KONSTANTA & STORAGE KEYS
 // =========================================================
 
 // ===== NAMA & IDENTITAS =====
-export const APP_NAME = 'TanyaBukan';
+export const APP_NAME = 'BimbingKamu';
 
 // ===== MODE BELAJAR =====
 export const MODES = [
@@ -27,19 +27,19 @@ export const LEVELS = {
 };
 
 // ===== PENYIMPANAN (localStorage) =====
-// Semua kunci memakai prefiks "tanyabukan." agar bisa dibersihkan
+// Semua kunci memakai prefiks "bimbingkamu." agar bisa dibersihkan
 // tanpa menyentuh data aplikasi lain.
 export const STORAGE_KEYS = {
-  prefix: 'tanyabukan.',
-  provider: 'tanyabukan.provider',
-  apiKey: 'tanyabukan.apiKey',
-  materiFiles: 'tanyabukan.materiFiles', // legacy v1 (file global) — dimigrasi ke session.files
-  onboardingDone: 'tanyabukan.onboardingDone',
-  settings: 'tanyabukan.settings',
-  session: 'tanyabukan.session', // legacy v1 — dimigrasi ke `sessions`
-  sessions: 'tanyabukan.sessions',
-  activeSession: 'tanyabukan.activeSession',
-  sidebar: 'tanyabukan.sidebar',
+  prefix: 'bimbingkamu.',
+  provider: 'bimbingkamu.provider',
+  apiKey: 'bimbingkamu.apiKey',
+  materiFiles: 'bimbingkamu.materiFiles', // legacy v1 (file global) — dimigrasi ke session.files
+  onboardingDone: 'bimbingkamu.onboardingDone',
+  settings: 'bimbingkamu.settings',
+  session: 'bimbingkamu.session', // legacy v1 — dimigrasi ke `sessions`
+  sessions: 'bimbingkamu.sessions',
+  activeSession: 'bimbingkamu.activeSession',
+  sidebar: 'bimbingkamu.sidebar',
 };
 
 // ===== BANTUAN =====

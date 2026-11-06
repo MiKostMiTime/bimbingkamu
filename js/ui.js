@@ -1,5 +1,5 @@
 // =========================================================
-// TanyaBukan — UI
+// BimbingKamu — UI
 // Modal, toast, onboarding, timer, statistik, ekspor.
 // =========================================================
 import { storage } from './storage.js';
@@ -389,7 +389,7 @@ export function exportConversation({ meta, messages }) {
     .trim();
 
   const lines = [];
-  lines.push('# Percakapan TanyaBukan', '');
+  lines.push('# Percakapan BimbingKamu', '');
   lines.push(`- **Tanggal:** ${date}`);
   lines.push(`- **Mode:** ${getModeLabel(meta.mode)}`);
   lines.push(`- **Kedalaman:** ${meta.level} — ${getLevelLabel(meta.level)}`);
@@ -412,7 +412,7 @@ export function exportConversation({ meta, messages }) {
   });
 
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-  download(`tanyabukan-pembelajaran-${stamp}.md`, lines.join('\n'));
+  download(`bimbingkamu-pembelajaran-${stamp}.md`, lines.join('\n'));
   showToast('Percakapan berhasil diunduh.', 'success');
 }
 
@@ -467,7 +467,7 @@ export async function exportStudyCard({ messages = [], meta = {} }) {
     const link = document.createElement('a');
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
     link.href = dataUrl;
-    link.download = `tanyabukan-kartu-studi-${stamp}.png`;
+    link.download = `bimbingkamu-kartu-studi-${stamp}.png`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -475,7 +475,7 @@ export async function exportStudyCard({ messages = [], meta = {} }) {
     showToast('Karti studi berhasil diunduh sebagai PNG.', 'success');
   } catch (err) {
     // Fallback: ekspor ke .md bila html2canvas gagal (offline/CDN mati).
-    console.error('[TanyaBukan] Ekspor kartu gagal, fallback ke .md:', err);
+    console.error('[BimbingKamu] Ekspor kartu gagal, fallback ke .md:', err);
     exportConversation({ meta, messages });
     showToast('Gambar tak dibuat; ekspor ke .md sebagai cadangan.', 'info');
   } finally {

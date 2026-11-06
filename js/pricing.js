@@ -7,7 +7,7 @@
 // Semua fungsi murni menerima angka — tanpa tabel harga bawaan.
 
 // ===== KURS USD→IDR (DINAMIS) =====
-const RATE_CACHE_KEY = 'tanyabukan.usdIdr';
+const RATE_CACHE_KEY = 'bimbingkamu.usdIdr';
 const RATE_TTL = 24 * 60 * 60 * 1000; // 24 jam
 
 // Ambil kurs dari cache + umurnya (ms). Return { rate, ageMs } atau null.

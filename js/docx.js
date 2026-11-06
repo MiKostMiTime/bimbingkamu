@@ -1,5 +1,5 @@
 // =========================================================
-// TanyaBukan — DOCX
+// BimbingKamu — DOCX
 // Ekstraksi teks dari file Word (.docx) yang diunggah.
 // Memakai mammoth 1.11.0 (UMD self-contained, version dipin), diservis
 // dari repository ini (./vendor/mammoth) — dimuat on-demand sesuai
@@ -80,7 +80,7 @@ export async function extractDocxText(file, libLoader = loadDocxLib) {
   } catch (err) {
     // Pengaman terakhir: error mentah mana pun (file korup, zip
     // rusak, dsb.) harus tetap keluar sebagai pesan ramah.
-    console.error('[TanyaBukan] DOCX gagal diproses:', err);
+    console.error('[BimbingKamu] DOCX gagal diproses:', err);
     if (err && err.type) throw err; // hasil klasifikasi di atas
     throw {
       type: 'invalid',

@@ -1,5 +1,5 @@
 // =========================================================
-// TanyaBukan — REGISTRY PROVIDER + listModels
+// BimbingKamu — REGISTRY PROVIDER + listModels
 // Registry provider [OI]-compatible: TANPA provider bawaan.
 // Semua endpoint ditambahkan user (mis. http://127.0.0.1:1234);
 // daftar model SELALU diambil dari endpoint itu sendiri, sehingga

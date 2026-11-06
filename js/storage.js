@@ -1,5 +1,5 @@
 // =========================================================
-// TanyaBukan — STORAGE
+// BimbingKamu — STORAGE
 // Wrapper localStorage yang aman (selalu try/catch) supaya
 // aplikasi tidak pecah saat penyimpanan penuh / nonaktif.
 // =========================================================
@@ -39,7 +39,7 @@ function remove(key) {
   }
 }
 
-// ===== HAPUS SEMUA MILIK TANYABUKAN =====
+// ===== HAPUS SEMUA MILIK BimbingKamu =====
 // Hanya kunci berprefiks aplikasi ini — data aplikasi lain aman.
 function clearAll() {
   try {

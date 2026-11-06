@@ -1,5 +1,5 @@
 // =========================================================
-// TanyaBukan — CARD (Ekspor Kartu Studi ke PNG)
+// BimbingKamu — CARD (Ekspor Kartu Studi ke PNG)
 // Mengubah ringkasan sesi menjadi gambar PNG yang shareable
 // (untuk WA/IG/Story). html2canvas dimuat on-demand (UMD yang
 // diservis dari repository ini) hanya saat user mengetok "Ekspor kartu".
@@ -101,7 +101,7 @@ export function buildStudyCard({ messages = [], meta = {} }) {
   const brandText = document.createElement('div');
   const title = document.createElement('span');
   title.className = 'tb-card__title';
-  title.textContent = 'TanyaBukan';
+  title.textContent = 'BimbingKamu';
   const tagline = document.createElement('span');
   tagline.className = 'tb-card__tagline';
   tagline.textContent = 'Membimbing, bukan menjawab';
@@ -149,7 +149,7 @@ export function buildStudyCard({ messages = [], meta = {} }) {
   // --- Kaki: atribut sumber ---
   const foot = document.createElement('div');
   foot.className = 'tb-card__foot';
-  foot.textContent = 'Ringkasan dari sesi TanyaBukan';
+  foot.textContent = 'Ringkasan dari sesi BimbingKamu';
   wrap.appendChild(foot);
 
   return wrap;

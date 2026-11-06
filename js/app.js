@@ -1,5 +1,5 @@
 // =========================================================
-// TanyaBukan — APP
+// BimbingKamu — APP
 // Entry point: inisialisasi modul, state sesi, event binding.
 // =========================================================
 import { STORAGE_KEYS, getLevelLabel, migrateLegacyProviderSettings } from './config.js';
@@ -171,7 +171,7 @@ function errorDisplayText(err) {
 }
 
 function logApiError(err) {
-  console.error('[TanyaBukan] error API:', err.type, err.status || '', err.apiMessage || '');
+  console.error('[BimbingKamu] error API:', err.type, err.status || '', err.apiMessage || '');
 }
 
 // ===== DAFTAR MODEL (REFRESH OTOMATIS) =====
@@ -265,7 +265,7 @@ async function refreshProviderModelList() {
     });
   } catch (err) {
     updateConnStatus('error');
-    console.warn('[TanyaBukan] gagal memuat daftar model endpoint:', err && err.message);
+    console.warn('[BimbingKamu] gagal memuat daftar model endpoint:', err && err.message);
   }
 }
 
@@ -1696,7 +1696,7 @@ function restoreSession() {
 
 // ===== HAPUS SEMUA =====
 function resetAll() {
-  clearAllData(); // semua kunci tanyabukan.* — termasuk sessions & activeSession
+  clearAllData(); // semua kunci bimbingkamu.* — termasuk sessions & activeSession
   state.apiKey = '';
   state.materiFiles.length = 0;
   state.settings = { ...DEFAULT_SETTINGS };
@@ -1712,7 +1712,7 @@ function resetAll() {
   renderSessionList();
   updateStats();
   updateComposer();
-  showToast('Semua data TanyaBukan telah dihapus dari browser ini.', 'success');
+  showToast('Semua data BimbingKamu telah dihapus dari browser ini.', 'success');
 }
 
 // ===== MATERI: TERIMA FILE =====
@@ -1751,7 +1751,7 @@ async function ingestMateriFile(file) {
     }
   } catch (err) {
     // Error ramah = objek { type, message } yang kita lempar sendiri.
-    console.error('[TanyaBukan] unggah materi gagal:', err);
+    console.error('[BimbingKamu] unggah materi gagal:', err);
     const msg = err && err.type
       ? err.message
       : 'File tidak bisa dibaca. Coba file .txt, .md, .pdf, atau .docx lain.';

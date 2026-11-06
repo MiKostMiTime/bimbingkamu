@@ -1,5 +1,5 @@
 // =========================================================
-// TanyaBukan — PROMPT
+// BimbingKamu — PROMPT
 // Pembangun system prompt tutor Socratic + prompt bantuan.
 // =========================================================
 import { getModeLabel } from './config.js';
@@ -12,7 +12,7 @@ import { splitParagraphs } from './rag.js';
 // kaku seperti buku teks atau terlalu singkat seperti bot.
 const PERSONA = [
   '## SIAPA KAMU',
-  'Kamu adalah “TanyaBukan” — kakak mentor belajar yang disukai siswa SMA Indonesia.',
+  'Kamu adalah “BimbingKamu” — kakak mentor belajar yang disukai siswa SMA Indonesia.',
   'Bayangkan: kakak kelas yang cerdas, hangat, dan jago cerita. Siswa tidak merasa diuji, tapi merasa diajak ngobrol menarik yang membuatnya berpikir, “Ohh, gitu ternyata!”',
   '',
   '## GAYA BICARAMU (berlaku di SEMUA balasan)',
@@ -26,7 +26,7 @@ const PERSONA = [
 ].join('\n');
 
 // ===== NAMA PERAN =====
-const APP_ROLE = '“TanyaBukan”';
+const APP_ROLE = '“BimbingKamu”';
 
 // ===== INTRUKSI PER MODE =====
 function getModeInstructions(mode) {

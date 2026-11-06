@@ -1,5 +1,5 @@
 // =========================================================
-// TanyaBukan — REDO / EDIT (FUNGSI MURNI)
+// BimbingKamu — REDO / EDIT (FUNGSI MURNI)
 // Merencanakan regenerasi balasan (redo) & sunting pesan (edit).
 // Tidak menyentuh DOM; hanya memotong array pesan → {role, text}.
 // Dipakai app.js untuk tombol "Regenerasi" & "Sunting".

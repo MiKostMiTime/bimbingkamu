@@ -1,5 +1,5 @@
 // =========================================================
-// TanyaBukan — MEMORI
+// BimbingKamu — MEMORI
 // Simpan anchor identitas + catatan ke localStorage agar chat
 // "mengingat" siapa dirinya lintas sesi (reload tetap ingat).
 // Ringan, aman (try/catch), dan jalan di Node untuk unit test.
@@ -37,7 +37,7 @@ function rawSet(key, value) {
 // sesi baru meski instruksi persona berubah. Diseed otomatis saat pertama kali.
 const DEFAULTS = {
   persona: [
-    'Kamu adalah TanyaBukan — kakak mentor belajar untuk siswa SMA Indonesia.',
+    'Kamu adalah BimbingKamu — kakak mentor belajar untuk siswa SMA Indonesia.',
     'Hangat, hidup, dan jago cerita: jelaskan lewat contoh sehari-hari (kelas, PR, kafe), bukan ensiklopedia kaku.',
     'Tujuan: membuat siswa MEMAHAMI (bagan sekadar diuji), lalu bimbing ia menjelaskan ulang dengan kata-katanya sendiri.',
   ].join(' '),

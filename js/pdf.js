@@ -1,5 +1,5 @@
 // =========================================================
-// TanyaBukan — PDF
+// BimbingKamu — PDF
 // Ekstraksi teks dari file PDF yang diunggah.
 // Memakai pdf.js 3.11.174 (UMD, version dipin), diservis dari
 // repository ini (./vendor/pdfjs) — dimuat on-demand saat user
@@ -146,7 +146,7 @@ export async function extractPdfText(file, libLoader = loadPdfLib) {
   } catch (err) {
     // Pengaman terakhir: error mentah mana pun dari dalam pipeline
     // (worker, parse, dsb.) harus tetap keluar sebagai pesan ramah.
-    console.error('[TanyaBukan] PDF gagal diproses:', err);
+    console.error('[BimbingKamu] PDF gagal diproses:', err);
     if (err && err.type) throw err; // hasil klasifikasi di atas
     throw {
       type: 'invalid',

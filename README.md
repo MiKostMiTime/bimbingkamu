@@ -1,6 +1,6 @@
-# TanyaBukan
+# BimbingKamu
 
-Tutor belajar Socratic berbasis RAG untuk siswa SMA Indonesia. Alih-alih langsung menjawab, TanyaBukan membimbingmu menemukan jawaban **dari materi milikmu sendiri** — lebih dalam dan lebih fokus, dengan halusinasi yang ditekan lewat batasan prompt dan penandaan kutipan yang tidak ditemukan di materi (bukan jaminan mutlak).
+Tutor belajar Socratic berbasis RAG untuk siswa SMA Indonesia. Alih-alih langsung menjawab, BimbingKamu membimbingmu menemukan jawaban **dari materi milikmu sendiri** — lebih dalam dan lebih fokus, dengan halusinasi yang ditekan lewat batasan prompt dan penandaan kutipan yang tidak ditemukan di materi (bukan jaminan mutlak).
 
 Proyek ini memakai skema **BYOK** (Bring Your Own Key): kamu memasukkan kunci API *provider* milikmu — OpenRouter, Gemini AI Studio, atau OpenAI (dan endpoint lain yang kompatibel dengan OpenAI). Kunci hanya tersimpan di `localStorage` browser dan hanya dikirim ke endpoint yang kamu pilih; tidak ada backend, tidak ada server, tidak ada pelacakan.
 
@@ -49,7 +49,7 @@ Aplikasi ini sepenuhnya statis. Upload seluruh isi folder ke hosting statis mana
 ## Struktur folder
 
 ```
-tanyabukan/
+bimbingkamu/
 ├── index.html          # markup, muat CSS + 2 library CDN (marked, dompurify)
 ├── README.md
 ├── css/
@@ -83,10 +83,10 @@ tanyabukan/
 - Layout: shell dikunci tinggi viewport (`overflow: hidden`) — yang bisa digulir hanya kotak chat. Sidebar riwayat 300px bisa diratakan di layar lebar; di layar ≤640px menjadi drawer. Panel setting berada di drawer kanan (fixed) yang sama di semua ukuran layar.
 - API: generik **[OI]-compatible** — tiap endpoint dihubunkan lewat path `/models` + `/chat/completions`; header auth & tools (grounding) disesuaikan per provider. Harga model **dinamis**: OpenRouter diambil live dari endpoint, LM Studio lokal = gratis, lainnya ditampilkan tanpa biaya.
 - Riwayat percakapan (user + model) dikirim penuh pada setiap giliran; system prompt berisi materi siswa (lengkap, tanpa pemotongan) + pola **jelaskan-dulu-baru-tanyakan** — Socratic dipakai untuk mengecek pemahaman, bukan pengganti penjelasan; mode & level mengatur intensitas bimbingan.
-- Riwayat sesi: `tanyabukan.sessions` (array, maks. 50, terlama terbuang) + `tanyabukan.activeSession`; tersimpan otomatis setiap giliran.
+- Riwayat sesi: `bimbingkamu.sessions` (array, maks. 50, terlama terbuang) + `bimbingkamu.activeSession`; tersimpan otomatis setiap giliran.
 - File materi terlampir: tersimpan di dalam objek sesi (`session.files`) — **spesifik per sesi chat**, tidak global. Teksnya hanya ikut ke prompt model dan ekspor, tidak ditampilkan di panel Materi.
 - Kutipan: system prompt mewajibkan AI membungkus frasa materi dengan `[[...]]`; frontend mengubahnya menjadi `<mark>` highlight + tooltip.
-- Seluruh data tersimpan di `localStorage` dengan prefiks `tanyabukan.` — tombol **Hapus semua data** membersihkan hanya milik aplikasi ini.
+- Seluruh data tersimpan di `localStorage` dengan prefiks `bimbingkamu.` — tombol **Hapus semua data** membersihkan hanya milik aplikasi ini.
 
 ## Pengujian
 

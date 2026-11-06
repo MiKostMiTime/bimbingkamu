@@ -1,6 +1,6 @@
-// TanyaBukan — PWA CACHE LOGIC (murni, teruji di Node; dipakai sw.js sebagai ESM worker).
-export const CACHE_VERSION = 'tanyabukan-shell-v1';
-export const OLD_CACHE_PREFIX = 'tanyabukan-shell-';
+// BimbingKamu — PWA CACHE LOGIC (murni, teruji di Node; dipakai sw.js sebagai ESM worker).
+export const CACHE_VERSION = 'bimbingkamu-shell-v1';
+export const OLD_CACHE_PREFIX = 'bimbingkamu-shell-';
 
 export const PRECACHE_ASSETS = [
   './index.html',
