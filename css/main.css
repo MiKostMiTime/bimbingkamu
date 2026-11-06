@@ -198,6 +198,14 @@ select:focus-visible {
     visibility: visible;
   }
 
+  /* Agar tombol di header chat (mis. full-screen) tetap bisa diklik saat
+     drawer terbuka, area chat diletakkan di atas backdrop (40) tapi di bawah
+     panel sidebar (50). Tanpa ini backdrop menelan klik ke tombol header. */
+  .chat-area {
+    position: relative;
+    z-index: 41;
+  }
+
   .app-header__tagline {
     display: none;
   }

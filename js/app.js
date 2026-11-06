@@ -1779,34 +1779,68 @@ function syncHistoryToggleAria(collapsed) {
   );
 }
 
-// Tombol full-screen di header chat: aturkan sidebar agar isi pengisian
-// memenuhi lebar. Berbagi state is-collapsed dengan tombol riwayat (sumber
-// kebenaran tunggal), tapi mengelola label-nya sendiri.
+// Tombol full-screen di header chat: aturkan sidebar KIRI agar isi chat
+// memenuhi lebar. Berbagi state dengan tombol riwayat (sumber kebenaran
+// tunggal via STORAGE_KEYS.sidebar), tapi mengelola label-nya sendiri.
+// - Layar lebar (.is-collapsed): sidebar menyusut lewat grid → isi penuh.
+// - HP (.is-open): sidebar = drawer; dibuka/tutup agar isi penuh (full-screen).
+// Tombol ini toggle sidebar sejati: sekali klik sembunyikan, sekali lagi
+// kembalikan — label menunjukkan aksi yang akan dilakukan.
 function toggleFullscreenChat() {
-  const collapsed = dom.appShell.classList.toggle('is-collapsed');
-  syncHistoryToggleAria(collapsed);
-  if (dom.fullscreenChatBtn) {
-    dom.fullscreenChatBtn.setAttribute('aria-expanded', String(collapsed));
-    dom.fullscreenChatBtn.setAttribute(
-      'aria-label',
-      collapsed ? 'Kembali dengan sidebar' : 'Buka chat layar penuh'
-    );
+  if (isMobile()) {
+    // HP: buka/tutup drawer → sidebar disembunyikan/dikembalikan.
+    const open = dom.sidebar.classList.toggle('is-open');
+    dom.sidebarBackdrop.classList.toggle('is-open', open);
+    syncHistoryToggleAria(!open); // sidebar hidden <=> collapsed
+    if (dom.fullscreenChatBtn) {
+      dom.fullscreenChatBtn.setAttribute('aria-expanded', String(!open));
+      dom.fullscreenChatBtn.setAttribute(
+        'aria-label',
+        !open ? 'Kembali dengan sidebar' : 'Buka chat layar penuh'
+      );
+    }
+    storage.set(STORAGE_KEYS.sidebar, open ? 'open' : 'collapsed');
+  } else {
+    // Layar lebar: aturkan sidebar lewat grid (.is-collapsed) → isi memenuhi lebar.
+    const collapsed = dom.appShell.classList.toggle('is-collapsed');
+    syncHistoryToggleAria(collapsed);
+    if (dom.fullscreenChatBtn) {
+      dom.fullscreenChatBtn.setAttribute('aria-expanded', String(collapsed));
+      dom.fullscreenChatBtn.setAttribute(
+        'aria-label',
+        collapsed ? 'Kembali dengan sidebar' : 'Buka chat layar penuh'
+      );
+    }
+    storage.set(STORAGE_KEYS.sidebar, collapsed ? 'collapsed' : 'open');
   }
-  storage.set(STORAGE_KEYS.sidebar, collapsed ? 'collapsed' : 'open');
 }
 
 function hydrateSidebar() {
-  const collapsed = storage.get(STORAGE_KEYS.sidebar, 'open') === 'collapsed';
-  dom.appShell.classList.toggle('is-collapsed', collapsed);
-  // Di HP sidebar = drawer yang tertutup saat awal; full-screen tak berlaku di HP.
-  syncHistoryToggleAria(isMobile() ? true : collapsed);
-  if (dom.fullscreenChatBtn) {
-    const fsCollapsed = isMobile() ? false : collapsed;
-    dom.fullscreenChatBtn.setAttribute('aria-expanded', String(fsCollapsed));
-    dom.fullscreenChatBtn.setAttribute(
-      'aria-label',
-      fsCollapsed ? 'Kembali dengan sidebar' : 'Buka chat layar penuh'
-    );
+  if (isMobile()) {
+    // HP: sidebar = drawer. Default tertutup (sesuai HTML awal); 'open' => buka.
+    const open = storage.get(STORAGE_KEYS.sidebar, 'closed') === 'open';
+    dom.sidebar.classList.toggle('is-open', open);
+    dom.sidebarBackdrop.classList.toggle('is-open', open);
+    syncHistoryToggleAria(!open);
+    if (dom.fullscreenChatBtn) {
+      dom.fullscreenChatBtn.setAttribute('aria-expanded', String(!open));
+      dom.fullscreenChatBtn.setAttribute(
+        'aria-label',
+        !open ? 'Kembali dengan sidebar' : 'Buka chat layar penuh'
+      );
+    }
+  } else {
+    // Desktop: grid. Default terbuka (sidebar tampil); 'collapsed' => ratakan.
+    const collapsed = storage.get(STORAGE_KEYS.sidebar, 'open') === 'collapsed';
+    dom.appShell.classList.toggle('is-collapsed', collapsed);
+    syncHistoryToggleAria(collapsed);
+    if (dom.fullscreenChatBtn) {
+      dom.fullscreenChatBtn.setAttribute('aria-expanded', String(collapsed));
+      dom.fullscreenChatBtn.setAttribute(
+        'aria-label',
+        collapsed ? 'Kembali dengan sidebar' : 'Buka chat layar penuh'
+      );
+    }
   }
 }
 
