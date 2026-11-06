@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CACHE_VERSION, PRECACHE_ASSETS, isOwnAsset, selectStrategy } from '../js/pwa-cache.js';
+import { shouldPromptUpdate } from '../js/pwa.js';
 
 const ORIGIN = 'http://localhost/';
 
@@ -25,4 +26,10 @@ test('pwa-cache: selectStrategy — sw.js network-only; own cache-first; api net
   assert.equal(selectStrategy('http://localhost/sw.js', ORIGIN), 'network-only');
   assert.equal(selectStrategy('./css/main.css', ORIGIN), 'cache-first');
   assert.equal(selectStrategy('https://api.example.com/data', ORIGIN), 'network-first');
+});
+
+test('pwa: shouldPromptUpdate — true saat SW menunggu update; false bila tidak', () => {
+  assert.equal(shouldPromptUpdate({ installing: false, installed: true, waiting: true, activating: false }), true);
+  assert.equal(shouldPromptUpdate({ installing: true, installed: false, waiting: false, activating: false }), false);
+  assert.equal(shouldPromptUpdate({}), false);
 });
