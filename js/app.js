@@ -79,6 +79,7 @@ const dom = {
   appShell: $('appShell'),
   sidebarBackdrop: $('sidebarBackdrop'),
   historyToggle: $('historyToggle'),
+  fullscreenChatBtn: $('fullscreenChatBtn'),
   settingsToggle: $('settingsToggle'),
   settingsPanel: $('settingsPanel'),
   settingsBackdrop: $('settingsBackdrop'),
@@ -1778,11 +1779,35 @@ function syncHistoryToggleAria(collapsed) {
   );
 }
 
+// Tombol full-screen di header chat: aturkan sidebar agar isi pengisian
+// memenuhi lebar. Berbagi state is-collapsed dengan tombol riwayat (sumber
+// kebenaran tunggal), tapi mengelola label-nya sendiri.
+function toggleFullscreenChat() {
+  const collapsed = dom.appShell.classList.toggle('is-collapsed');
+  syncHistoryToggleAria(collapsed);
+  if (dom.fullscreenChatBtn) {
+    dom.fullscreenChatBtn.setAttribute('aria-expanded', String(collapsed));
+    dom.fullscreenChatBtn.setAttribute(
+      'aria-label',
+      collapsed ? 'Kembali dengan sidebar' : 'Buka chat layar penuh'
+    );
+  }
+  storage.set(STORAGE_KEYS.sidebar, collapsed ? 'collapsed' : 'open');
+}
+
 function hydrateSidebar() {
   const collapsed = storage.get(STORAGE_KEYS.sidebar, 'open') === 'collapsed';
   dom.appShell.classList.toggle('is-collapsed', collapsed);
-  // Di HP sidebar = drawer yang tertutup saat awal.
+  // Di HP sidebar = drawer yang tertutup saat awal; full-screen tak berlaku di HP.
   syncHistoryToggleAria(isMobile() ? true : collapsed);
+  if (dom.fullscreenChatBtn) {
+    const fsCollapsed = isMobile() ? false : collapsed;
+    dom.fullscreenChatBtn.setAttribute('aria-expanded', String(fsCollapsed));
+    dom.fullscreenChatBtn.setAttribute(
+      'aria-label',
+      fsCollapsed ? 'Kembali dengan sidebar' : 'Buka chat layar penuh'
+    );
+  }
 }
 
 // ===== EVENT BINDING =====
@@ -1941,6 +1966,10 @@ function bindEvents() {
       toggleHistoryCollapsed();
     }
   });
+  // Full-screen chat: aturkan sidebar (layar lebar = ratakan, isi memenuhi lebar)
+  if (dom.fullscreenChatBtn) {
+    dom.fullscreenChatBtn.addEventListener('click', toggleFullscreenChat);
+  }
   dom.sidebarBackdrop.addEventListener('click', closeSidebar);
 
   // Pengaturan: drawer kanan

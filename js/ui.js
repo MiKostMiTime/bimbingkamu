@@ -196,10 +196,14 @@ export function showOnboarding({ onComplete, onSkip, onConnect, onModel }) {
   body.className = 'onboarding__steps';
   const bar = document.createElement('div');
   bar.className = 'modal__actions';
-  // Urutan: isi (steps) → indikator step (progress, kiri-bawah) → tombol (kanan-bawah).
-  // steps diletakkan pertama agar pembaca layar membaca isi sebelum dot, dan
-  // fleksibel mengisi ruang tengah pop-up.
-  modal.append(body, progress, bar);
+  // Urutan: isi (steps) → footer (indikator step di kiri-bawah + tombol aksi di
+  // kanan-bawah dalam satu baris) → menempel di bawah setelah isi. steps diletakkan
+  // pertama agar pembaca layar membaca isi sebelum dot, dan fleksibel mengisi ruang
+  // tengah pop-up; footer menyatukan dot & tombol agar rapi & sejajar baselinenya.
+  const footer = document.createElement('div');
+  footer.className = 'modal--onboarding__footer';
+  modal.append(body, footer);
+  footer.append(progress, bar);
   overlay.appendChild(modal);
   root.appendChild(overlay);
 
