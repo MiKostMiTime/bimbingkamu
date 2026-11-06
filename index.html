@@ -16,7 +16,9 @@
          CDN eksternal. Lisensi tersedia di vendor/licenses/. -->
     <link rel="stylesheet" href="./vendor/fonts/inter.css" />
 
-    <!-- Semua CSS digabung + diminify via `npm run build` -> css/styles.min.css -->
+    <!-- Semua CSS digabung + diminify via `npm run build` -> css/styles.min.css.
+          Berkas BUILD (styles.min.css + js/app.bundle.js) sudah DI-COMMIT agar
+          Vercel "push -> deploy" jalan tanpa langkah build di CI. -->
     <link rel="stylesheet" href="./css/styles.min.css" />
 
     <!-- Mulai muat aset kritis lebih awal (hemat latency di internet lambat) -->
