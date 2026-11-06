@@ -1329,11 +1329,13 @@
 }
 
 /* Onboarding: modal jadi flex column, isi mengisi tengah, progress menempel
-   ke kiri-bawah sementara tombol aksi tetap di kanan-bawah. */
+   ke kiri-bawah sementara tombol aksi tetap di kanan-bawah.
+   Tinggi mengikuti isi (kotak proporsional), dibatasai max-height 90vh agar
+   tidak memenuhi layar; bila isinya panjang, area isi yang digulir. */
 .modal--onboarding {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  max-height: 90vh;
 }
 .modal--onboarding .onboarding__steps {
   flex: 1 1 auto;
