@@ -7,7 +7,7 @@ import { estimateCost, formatCostIDR, fetchUsdIdr, effectiveUsdIdr, cachedUsdIdr
 import { storage } from './storage.js';
 import { resolveProviders, listModels, providerChat, probeEndpoint, fetchContextLimit, fetchModelPricing, resolveApiKey, addProvider, updateProvider, removeProvider, nextActiveAfterDelete, DEFAULT_PROVIDERS } from './providers.js';
 import { needsSummarize, splitForSummary, summarySystemPrompt, summaryMessage, buildContentsFrom } from './summarize.js';
-import { selectRelevantParagraphs } from './rag.js';
+import { retrieveWithScores, joinScoredChunks } from './rag.js';
 import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
 import { extractPdfText } from './pdf.js';
 import { extractDocxText } from './docx.js';
@@ -1460,8 +1460,10 @@ function buildMateri() {
 function buildMateriFor(query) {
   const full = buildMateri();
   if (!full || !query) return full; // tanpa query -> seluruh materi (pembukaan)
-  const selected = selectRelevantParagraphs(full, query, 6);
-  return selected || full; // fallback: bila tak ada paragraf relevan
+  // Vektor TF-IDF per chunk (maxWords 200 agar paragraf tebal tetap terpecah),
+  // vocab dari query saja. Ambil top-6 paling relevan, lalu gabung jadi string.
+  const scored = retrieveWithScores(full, query, 6, { maxWords: 200, overlap: 40 });
+  return joinScoredChunks(scored) || full; // fallback: tak ada yang relevan -> seluruh materi
 }
 
 // Helper: kemas materi + hasil websearch ke slot konteks terpisah (data bacaan),
