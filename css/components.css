@@ -1325,6 +1325,19 @@
 .onboarding__progress {
   display: flex;
   gap: var(--space-2);
+  align-self: flex-start;
+}
+
+/* Onboarding: modal jadi flex column, isi mengisi tengah, progress menempel
+   ke kiri-bawah sementara tombol aksi tetap di kanan-bawah. */
+.modal--onboarding {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.modal--onboarding .onboarding__steps {
+  flex: 1 1 auto;
+  overflow-y: auto;
 }
 
 .onboarding__dot {

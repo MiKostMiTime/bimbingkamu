@@ -186,7 +186,7 @@ export function showOnboarding({ onComplete, onSkip, onConnect, onModel }) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   const modal = document.createElement('div');
-  modal.className = 'modal';
+  modal.className = 'modal modal--onboarding';
   modal.setAttribute('role', 'dialog');
   modal.setAttribute('aria-modal', 'true');
 
@@ -196,7 +196,10 @@ export function showOnboarding({ onComplete, onSkip, onConnect, onModel }) {
   body.className = 'onboarding__steps';
   const bar = document.createElement('div');
   bar.className = 'modal__actions';
-  modal.append(progress, body, bar);
+  // Urutan: isi (steps) → indikator step (progress, kiri-bawah) → tombol (kanan-bawah).
+  // steps diletakkan pertama agar pembaca layar membaca isi sebelum dot, dan
+  // fleksibel mengisi ruang tengah pop-up.
+  modal.append(body, progress, bar);
   overlay.appendChild(modal);
   root.appendChild(overlay);
 
