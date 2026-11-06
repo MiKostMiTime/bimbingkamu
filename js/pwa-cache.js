@@ -1,13 +1,11 @@
 // BimbingKamu — PWA CACHE LOGIC (murni, teruji di Node; dipakai sw.js sebagai ESM worker).
-export const CACHE_VERSION = 'bimbingkamu-shell-v2';
+export const CACHE_VERSION = 'bimbingkamu-shell-v3';
 export const OLD_CACHE_PREFIX = 'bimbingkamu-shell-';
 
 export const PRECACHE_ASSETS = [
   './index.html',
-  './css/variables.css',
-  './css/main.css',
-  './css/components.css',
-  './js/app.js',
+  './css/styles.min.css',
+  './js/app.bundle.js',
   './js/pwa.js',
   './manifest.json',
   './icons/icon-192.png',

@@ -1844,6 +1844,17 @@ function hydrateSidebar() {
   }
 }
 
+// Utility: debounced(fn, wait) — tunda ekseksi sampai pengguna berhenti sesaat.
+// Berguna untuk handler 'input' agar tidak recalayout tiap ketukan di
+// perangkat rendah (low-spec CPU). Nilai input tetap terbaca saat kirim.
+function debounce(fn, wait = 120) {
+  let timer = null;
+  return function (...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn.apply(this, args), wait);
+  };
+}
+
 // ===== EVENT BINDING =====
 function bindEvents() {
   // PROVIDER: ganti provider → segarkan dropdown model + render ulang opsi.
@@ -1972,10 +1983,13 @@ function bindEvents() {
   });
 
   // Chat
-  dom.input.addEventListener('input', () => {
+  // 'input' di-debounce agar autosize + composer tidak recalayout tiap ketukan
+  // (hemat CPU di perangkat rendah). Nilai input tetap terbaca saat kirim.
+  const onInputResize = debounce(() => {
     autosizeInput();
     updateComposer();
-  });
+  }, 120);
+  dom.input.addEventListener('input', onInputResize);
   dom.input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();

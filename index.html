@@ -16,9 +16,13 @@
          CDN eksternal. Lisensi tersedia di vendor/licenses/. -->
     <link rel="stylesheet" href="./vendor/fonts/inter.css" />
 
-    <link rel="stylesheet" href="./css/variables.css" />
-    <link rel="stylesheet" href="./css/main.css" />
-    <link rel="stylesheet" href="./css/components.css" />
+    <!-- Semua CSS digabung + diminify via `npm run build` -> css/styles.min.css -->
+    <link rel="stylesheet" href="./css/styles.min.css" />
+
+    <!-- Mulai muat aset kritis lebih awal (hemat latency di internet lambat) -->
+    <link rel="preload" href="./js/app.bundle.js" as="script" />
+    <link rel="preload" href="./vendor/marked/marked.min.js" as="script" />
+    <link rel="preload" href="./vendor/dompurify/purify.min.js" as="script" />
 
     <meta
       http-equiv="Content-Security-Policy"
@@ -326,7 +330,7 @@
     <div id="toastRegion" class="toast-region" aria-live="polite"></div>
     <div id="modalRoot"></div>
 
-    <script type="module" src="./js/app.js"></script>
+    <script type="module" src="./js/app.bundle.js"></script>
     <script type="module" src="./js/pwa.js"></script>
   </body>
 </html>
