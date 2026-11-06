@@ -1,13 +1,13 @@
 {
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
-  ],
-  "headers": [
+  "routes": [
     {
-      "source": "(vendor|css|js)/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
-      ]
-    }
+      "src": "/(assets|vendor|css|js)/.*",
+      "headers": { "Cache-Control": "public, max-age=31536000, immutable" }
+    },
+    {
+      "src": "/manifest\\.(json|webmanifest)",
+      "headers": { "Cache-Control": "public, max-age=86400" }
+    },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
