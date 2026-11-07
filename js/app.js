@@ -99,6 +99,8 @@ const dom = {
   providerSelect: $('providerSelect'),
   addEndpointBtn: $('addEndpointBtn'),
   providerList: $('providerList'),
+  setupGuideToggle: $('setupGuideToggle'),
+  setupGuideBody: $('setupGuideBody'),
   connStatus: $('headerConnStatus'),
   webSearchToggle: $('webSearchToggle'),
   toneSegment: $('toneSegment'),
@@ -1887,6 +1889,15 @@ function bindEvents() {
     if (e.target.closest('.provider-item__edit')) openEndpointModal(id);
     else if (e.target.closest('.provider-item__delete')) deleteEndpointConfirm(id);
   });
+
+  // Panduan Setup: buka/tutup panduan cloud vs local LM Studio.
+  if (dom.setupGuideToggle && dom.setupGuideBody) {
+    dom.setupGuideToggle.addEventListener('click', () => {
+      const open = dom.setupGuideBody.hidden;
+      dom.setupGuideBody.hidden = !open;
+      dom.setupGuideToggle.setAttribute('aria-expanded', String(open));
+    });
+  }
 
   // Hapus semua data
   $('deleteAllBtn').addEventListener('click', () => {

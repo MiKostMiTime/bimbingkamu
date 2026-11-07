@@ -1811,3 +1811,65 @@ input, textarea, select,
   white-space: nowrap;
   border: 0;
 }
+
+/* ===== PANDUAN SETUP (cloud vs local LM Studio) ===== */
+.setup-guide {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  overflow: hidden;
+}
+.setup-guide__toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  color: var(--color-text);
+  text-align: left;
+}
+.setup-guide__toggle:hover { background: var(--color-surface); }
+.setup-guide__toggle:focus { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.setup-guide__chevron {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  transition: transform var(--transition);
+}
+.setup-guide__toggle[aria-expanded="true"] .setup-guide__chevron { transform: rotate(90deg); }
+.setup-guide__body { padding: var(--space-2) var(--space-3) var(--space-4); }
+.setup-guide__body[hidden] { display: none; }
+.setup-step + .setup-step { margin-top: var(--space-3); }
+.setup-step__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-heading);
+  font-weight: 700;
+  color: var(--color-text);
+}
+.setup-step__text { margin: 0 0 var(--space-2); font-size: var(--text-body); line-height: var(--leading); }
+.setup-step__list { margin: 0; padding-left: 1.2em; }
+.setup-step__list li { margin-bottom: var(--space-2); line-height: var(--leading); }
+.setup-col code, .setup-step code {
+  font-size: var(--text-caption);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+.setup-two-col { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-3); }
+.setup-col { flex: 1 1 220px; min-width: 0; }
+.setup-col__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-body);
+  font-weight: 700;
+  color: var(--color-accent);
+}
+.setup-col__note { margin: var(--space-2) 0 0; font-size: var(--text-caption); line-height: var(--leading); color: var(--color-text-secondary); }

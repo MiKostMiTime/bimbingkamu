@@ -188,6 +188,71 @@
         <ul id="providerList" class="provider-list" aria-label="Endpoint terdaftar"></ul>
       </section>
 
+      <!-- PANDUAN SETUP (cloud vs local LM Studio) -->
+      <section class="panel" aria-labelledby="guide-title">
+        <div class="panel__header">
+          <h2 class="panel__title" id="guide-title">Panduan Setup</h2>
+        </div>
+        <div class="setup-guide">
+          <button
+            id="setupGuideToggle"
+            class="setup-guide__toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="setupGuideBody"
+          >
+            <span class="setup-guide__label">Panduan: cloud vs local LM Studio</span>
+            <svg class="setup-guide__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div id="setupGuideBody" class="setup-guide__body" hidden>
+            <!-- CLOUD: default, tanpa setup -->
+            <div class="setup-step">
+              <h3 class="setup-step__title">☁️ Cloud (rekomendasi — tanpa setup)</h3>
+              <p class="setup-step__text">
+                Cloud = provider siap di internet. Tinggal pilih, isi kunci API, langsung belajar.
+                Cocok yang ingin cepat &amp; stabil (butuh koneksi internet; sebagian berbayar).
+              </p>
+              <ol class="setup-step__list">
+                <li>Pilih <strong>OpenRouter</strong>, <strong>Gemini AI Studio</strong>, atau <strong>OpenAI</strong> di dropdown “Endpoint aktif”.</li>
+                <li>Klik <strong>Sunting</strong> pada endpoint → isi <strong>Kunci API</strong> (ambil di website provider) → <strong>Simpan perubahan</strong>.</li>
+                <li>Pilih model → mulai belajar!</li>
+              </ol>
+            </div>
+            <!-- LOCAL: LM Studio, tunnel utama + LAN -->
+            <div class="setup-step">
+              <h3 class="setup-step__title">🖥️ Local LM Studio (gratis)</h3>
+              <p class="setup-step__text">
+                LM Studio jalan di komputermu, gratis, tanpa internet. Karena BimbingKamu berjalan di
+                internet (HTTPS), endpoint lokal (<code>http://127.0.0.1:1234</code>) tidak bisa langsung
+                dihubungi — perlu “dibuka ke luar” dulu. Ada dua cara:
+              </p>
+              <div class="setup-two-col">
+                <div class="setup-col">
+                  <h4 class="setup-col__title">Tunnel (rekomendasi)</h4>
+                  <p class="setup-col__note">Kerja dari phone &amp; mana-mana.</p>
+                  <ol class="setup-step__list">
+                    <li>Di LM Studio → <strong>Settings → Server</strong>, centang <strong>Enable CORS</strong>.</li>
+                    <li>Buka terminal, jalankan: <code>ngrok http 1234</code> (atau <code>cloudflared tunnel --url http://localhost:1234</code>).</li>
+                    <li>Salin URL <strong>HTTPS</strong> yang muncul (mis. <code>https://abcd.ngrok-free.app</code>).</li>
+                    <li>Tambah endpoint → tempel URL HTTPS itu sebagai <strong>Base URL</strong> → <strong>Tambah endpoint</strong>.</li>
+                  </ol>
+                </div>
+                <div class="setup-col">
+                  <h4 class="setup-col__title">LAN (dev, 1 jaringan)</h4>
+                  <p class="setup-col__note">Bila komputer &amp; phone di WiFi sama.</p>
+                  <ol class="setup-step__list">
+                    <li>Enable CORS di LM Studio (langkah 1 di atas).</li>
+                    <li>Catat IP komputer (mis. <code>172.16.10.61</code>).</li>
+                    <li>Tambah endpoint dengan Base URL <code>http://172.16.10.61:1234</code>.</li>
+                  </ol>
+                  <p class="setup-col__note">Dari luar WiFi, LAN tak terjangkau → pakai tunnel di atas.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div class="panel__divider" role="separator"></div>
 
       <!-- MATERI -->
