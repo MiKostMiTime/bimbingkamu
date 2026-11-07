@@ -99,7 +99,13 @@ async function cacheFirst(request) {
     const net = await fetch(request);
     // Simpan salinan agar bisa dibaca offline nanti.
     const copy = net.clone();
-    await caches.open(CACHE_VERSION).then((c) => c.put(request, copy));
+    // Bungkas simpan ke cache agar error write tak menggagalkan respons asli
+    // (mencegah "Failed to convert value to 'Response'" di perangkat).
+    try {
+      await caches.open(CACHE_VERSION).then((c) => c.put(request, copy));
+    } catch (err) {
+      console.warn('[SW] simpan cache gagal:', err);
+    }
     return net;
   } catch {
     // Tanpa jaringan: tetap beri shell agar UI tetap tampil.
@@ -112,7 +118,12 @@ async function networkFirst(request) {
   try {
     const net = await fetch(request);
     const copy = net.clone();
-    await caches.open(CACHE_VERSION).then((c) => c.put(request, copy));
+    // Bungkas simpan ke cache agar error write tak menggagalkan respons asli.
+    try {
+      await caches.open(CACHE_VERSION).then((c) => c.put(request, copy));
+    } catch (err) {
+      console.warn('[SW] simpan cache gagal:', err);
+    }
     return net;
   } catch {
     return caches.match(request) || Response.error();

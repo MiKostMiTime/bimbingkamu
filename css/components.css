@@ -1254,9 +1254,13 @@
   justify-content: space-between;
   gap: var(--space-3);
   margin-bottom: var(--space-3);
+  min-width: 0; /* agar judul bisa bungkus tak meluber ke tombol X */
+  flex-wrap: wrap; /* bila sempit, judul turun ke baris sendiri — tak tumpang-tindih dengan X */
 }
 
 .modal__title {
+  flex: 1 1 auto; /* judul mengisi ruang tersisa, tak pernah menabrak/tumpang-tindih tombol X */
+  min-width: 0; /* izinkan pembungkusans saat layar sempit */
   font-size: var(--text-title);
   font-weight: 600;
   line-height: var(--leading-tight);

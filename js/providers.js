@@ -271,7 +271,11 @@ export async function listModels(apiKey, provider) {
     seen.add(id);
     ids.push(id);
   }
-  return ids;
+  // Batasi ke SATU model per endpoint (model pertama yang valid) agar chat hanya
+  // memakai satu model — mencegah crash bila endpoint melaporkan beberapa model
+  // (mis. embedding/secondary) yang tak bisa dipakai di perangkat user. Ambil model
+  // aktif endpoint (mis. model yang dimuat LM Studio).
+  return ids.slice(0, 1);
 }
 
 // ===== CHAT COMPLETION (PATH OPENAI) =====
