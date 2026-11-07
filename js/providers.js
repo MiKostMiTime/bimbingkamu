@@ -163,7 +163,12 @@ export async function probeEndpoint(baseUrl, apiKey = '') {
       };
       continue; // coba kandidat berikutnya
     }
-    lastErr = { ...mapApiError(res.status, '') };
+    // Baca body error: LM Studio/Gemini mengirim alasan yang spesifik
+    // (mis. "an LM Studio API token is required"). Tanpa ini pengguna hanya
+    // melihat pesan auth generik dan tidak tahu token harus dibuat di mana.
+    let bodyText = '';
+    try { bodyText = await res.text(); } catch {}
+    lastErr = { ...mapApiError(res.status, bodyText.slice(0, 800)) };
   }
   throw lastErr || {
     type: 'badrequest',

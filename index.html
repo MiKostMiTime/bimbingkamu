@@ -223,7 +223,9 @@
                 <li>Di komputer: nyalakan server LM Studio (port 1234) dan centang <strong>Enable CORS</strong>.</li>
                 <li>Di komputer yang sama, jalankan <code class="setup-code">ngrok http 1234</code>.</li>
                 <li>Salin alamat <code class="setup-code">https://....ngrok-free.app</code> yang muncul.</li>
-                <li>Di HP: buka BimbingKamu → <strong>Pengaturan</strong> → <strong>Tambah endpoint</strong>, tempel alamat itu sebagai Base URL, lalu pilih model.</li>
+                <li>Di HP: buka BimbingKamu → <strong>Pengaturan</strong> → <strong>Tambah endpoint</strong>, tempel alamat itu sebagai Base URL.</li>
+                <li>Bila LM Studio memakai <strong>Require Authentication</strong>, buat token di <strong>Developer → Server Settings → Manage Tokens</strong> dan tempel di kolom <strong>Kunci API</strong>.</li>
+                <li>Pilih model, lalu mulai belajar.</li>
               </ol>
               <p class="setup-col__note">
                 Tanpa ngrok: <code class="setup-code">cloudflared tunnel --url http://localhost:1234</code>.
@@ -266,8 +268,9 @@
                 <li><strong>Unduh</strong> file di atas, lalu <strong>ekstrak</strong> foldernya.</li>
                 <li>Buka <code class="setup-code">chrome://extensions</code>, aktifkan <strong>Mode pengembang</strong> (kanan atas).</li>
                 <li>Klik <strong>Muat yang tak terurai</strong> (<em>Load unpacked</em>), lalu pilih folder yang berisi <code class="setup-code">manifest.json</code>.</li>
-                <li>Di LM Studio, buka <strong>Settings → Server</strong>: nyalakan server (port 1234), centang <strong>Enable CORS</strong>, dan aktifkan <strong>Serve on Local Network</strong> bila diakses dari perangkat lain.</li>
-                <li>Di BimbingKamu, buka <strong>Pengaturan → Tambah endpoint</strong>, isi Base URL, klik <strong>Tambah endpoint</strong>, lalu pilih model.</li>
+                <li>Di LM Studio, buka <strong>Developer → Server Settings</strong>: nyalakan server (port 1234), centang <strong>Enable CORS</strong>, dan aktifkan <strong>Serve on Local Network</strong> bila diakses dari perangkat lain.</li>
+                <li>Bila <strong>Require Authentication</strong> aktif, klik <strong>Manage Tokens</strong> → <strong>Create Token</strong>, salin tokennya (hanya tampil sekali).</li>
+                <li>Di BimbingKamu, buka <strong>Pengaturan → Tambah endpoint</strong>: isi Base URL, tempel token di kolom <strong>Kunci API</strong>, klik <strong>Tambah endpoint</strong>, lalu pilih model.</li>
               </ol>
               <p class="setup-col__note"><strong>Base URL sesuai perangkat:</strong></p>
               <ul class="setup-list">

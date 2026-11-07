@@ -462,7 +462,7 @@ function openEndpointModal(id) {
           <input id="epEditKey" class="input endpoint-edit__key" type="password" value="${escapeAttr(isEdit ? p.key || '' : '')}" placeholder="Kunci API (opsional)" autocomplete="off" spellcheck="false" />
           <button id="epEditKeyToggle" class="btn btn--ghost btn--sm" type="button" aria-label="Tampilkan/sembunyikan kunci">${EYE}</button>
         </div>
-        <p class="field__hint">Kunci disimpan di browser ini dan dipakai khusus untuk endpoint tersebut. Kunci kosong = tanpa header auth (endpoint lokal seperti LM Studio).</p>
+        <p class="field__hint">Kunci disimpan di browser ini dan dipakai khusus untuk endpoint tersebut. Endpoint lokal tanpa auth boleh dikosongkan. Bila LM Studio memakai <strong>Require Authentication</strong>, buat token di <strong>Developer → Server Settings → Manage Tokens</strong> lalu tempel di sini.</p>
       </div>
     `,
     actions: [

@@ -9,6 +9,7 @@
 // Status 0 dipakai untuk error jaringan (fetch gagal).
 const MESSAGES = {
   auth: 'Kunci API tidak valid untuk endpoint ini. Periksa kembali kunci atau kosongkan bila endpoint lokal.',
+  lmstudioToken: 'LM Studio ini mewajibkan token. Buka LM Studio → Developer → Server Settings → Manage Tokens, buat token baru, lalu tempel di kolom Kunci API endpoint ini.',
   quota: 'Kuota/rate limit endpoint tercapai. Coba lagi beberapa saat.',
   network: 'Tidak bisa terhubung ke endpoint. Periksa koneksi & URL — bila endpoint lokal (LM Studio/Ollama), aktifkan "Enable CORS" di pengaturan server-nya.',
   model: 'Model ini tidak tersedia di endpoint. Coba pilih model lain dari daftar.',
@@ -24,11 +25,15 @@ const MESSAGES = {
 const QUOTA_RE = /quota|RESOURCE_EXHAUSTED|rate limit|too many requests/i;
 const NOTFOUND_RE = /not found|NOT_FOUND|deprecated|retired/i;
 const AUTH_RE = /api key|PERMISSION_DENIED|invalid_api_key|unauthorized/i;
+// LM Studio 0.4.0+ bisa mewajibkan token. Pesannya khas, dan lebih berguna
+// daripada pesan auth generik karena menyebut di mana token dibuat.
+const LMSTUDIO_TOKEN_RE = /lm ?studio api token|lm_api_token/i;
 
 export function mapApiError(status, apiMessage = '') {
   const detail = { status, apiMessage };
 
   // 1) Klasifikasi dari isi pesan API (paling akurat).
+  if (LMSTUDIO_TOKEN_RE.test(apiMessage)) return { type: 'auth', message: MESSAGES.lmstudioToken, ...detail };
   if (QUOTA_RE.test(apiMessage)) return { type: 'quota', message: MESSAGES.quota, ...detail };
   if (NOTFOUND_RE.test(apiMessage)) return { type: 'model', message: MESSAGES.model, ...detail };
   if (AUTH_RE.test(apiMessage)) return { type: 'auth', message: MESSAGES.auth, ...detail };
