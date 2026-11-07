@@ -228,6 +228,16 @@ function focusChatTarget() {
 // Samakan dengan VERSION di lmstudio-bridge/main.js + manifest.json.
 const BRIDGE_VERSION = '1.2.0';
 
+// Chrome Android & Safari iOS tidak mendukung ekstensi ini. Di perangkat itu
+// pesan status tidak boleh menyuruh memasang ekstensi; arahkan ke URL HTTPS.
+function isHandheld() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/Android|iPhone|iPad|iPod/i.test(ua)) return true;
+  // iPadOS 13+ menyamar sebagai Macintosh; sentuhan membedakannya.
+  return /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+}
+
 function renderBridgeStatus() {
   const el = dom.bridgeStatus;
   if (!el) return;
@@ -236,7 +246,9 @@ function renderBridgeStatus() {
 
   if (!bridge) {
     el.classList.add('is-warn');
-    el.textContent = 'Ekstensi bridge belum aktif. Untuk endpoint lokal, LAN IP, atau ngrok, pasang ekstensi v' + BRIDGE_VERSION + ' lewat Panduan Setup di bawah.';
+    el.textContent = isHandheld()
+      ? 'Di HP ekstensi tidak tersedia. Jalankan tunnel HTTPS di komputer, lalu tempel alamatnya di Base URL (lihat Panduan Setup).'
+      : 'Ekstensi bridge belum aktif. Untuk endpoint lokal, LAN IP, atau ngrok, pasang ekstensi v' + BRIDGE_VERSION + ' lewat Panduan Setup di bawah.';
     return;
   }
   if (bridge.version !== BRIDGE_VERSION) {

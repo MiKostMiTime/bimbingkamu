@@ -1978,10 +1978,17 @@ input, textarea, select,
   border-color: var(--color-accent-border);
   background: linear-gradient(180deg, #fbfaff 0%, var(--color-surface-2) 100%);
 }
+.setup-card--mobile {
+  border-color: var(--color-accent-border);
+  background: linear-gradient(180deg, #fbfaff 0%, var(--color-surface-2) 100%);
+}
 .setup-card__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* Di layar sempit judul + badge tidak muat sebaris. Tanpa wrap, badge
+     melewati tepi kartu lalu terpotong oleh overflow:hidden di .setup-guide. */
+  flex-wrap: wrap;
   gap: var(--space-2);
   margin-bottom: var(--space-2);
 }
@@ -1990,6 +1997,7 @@ input, textarea, select,
   align-items: center;
   gap: var(--space-1);
   margin: 0;
+  min-width: 0;
   font-size: var(--text-heading);
   font-weight: 700;
   color: var(--color-text);
@@ -1999,7 +2007,9 @@ input, textarea, select,
 
 /* badges / pills */
 .setup-badge {
-  flex: none;
+  /* Boleh turun ke baris sendiri, tetapi tidak boleh melebihi kartu. */
+  flex: 0 1 auto;
+  max-width: 100%;
   white-space: nowrap;
   font-size: var(--text-caption);
   font-weight: 600;
@@ -2034,6 +2044,7 @@ input, textarea, select,
 }
 .setup-code {
   display: inline-block;
+  max-width: 100%;
   margin-top: 2px;
   padding: 4px 8px;
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
@@ -2042,6 +2053,14 @@ input, textarea, select,
   border-radius: 6px;
   font-size: var(--text-caption);
   color: var(--color-accent-hover);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+/* .setup-card code punya specificity lebih tinggi (0,1,1) dan memaksa
+   nowrap. Perintah panjang seperti `cloudflared tunnel --url ...` jadi
+   melebar keluar kartu. Kembalikan wrapping untuk blok perintah. */
+.setup-card .setup-code,
+.setup-col .setup-code {
   white-space: pre-wrap;
   word-break: break-all;
 }

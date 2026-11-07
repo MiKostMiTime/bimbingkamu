@@ -205,14 +205,37 @@
             aria-controls="setupGuideBody"
           >
             <svg class="setup-guide__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18 15 12 9 6"/></svg>
-            <span class="setup-guide__label">Panduan: cloud, LAN, dan LM Studio lokal</span>
+            <span class="setup-guide__label">Panduan: HP, cloud, dan LM Studio lokal</span>
           </button>
           <div id="setupGuideBody" class="setup-guide__body" hidden>
+            <!-- MOBILE: tanpa ekstensi, lewat tunnel HTTPS -->
+            <article class="setup-card setup-card--mobile">
+              <div class="setup-card__head">
+                <h3 class="setup-card__title"><span class="setup-card__emoji" aria-hidden="true">📱</span> HP / tablet</h3>
+                <span class="setup-badge setup-badge--accent">tanpa ekstensi</span>
+              </div>
+              <p class="setup-card__text">
+                Chrome di Android dan Safari di iPhone tidak bisa memasang ekstensi. Selain itu
+                halaman HTTPS tidak diizinkan memanggil <code>http://</code> ke IP LAN. Jadi di HP,
+                LM Studio diakses lewat alamat <strong>HTTPS</strong> dari komputer yang menjalankannya.
+              </p>
+              <ol class="setup-list">
+                <li>Di komputer: nyalakan server LM Studio (port 1234) dan centang <strong>Enable CORS</strong>.</li>
+                <li>Di komputer yang sama, jalankan <code class="setup-code">ngrok http 1234</code>.</li>
+                <li>Salin alamat <code class="setup-code">https://....ngrok-free.app</code> yang muncul.</li>
+                <li>Di HP: buka BimbingKamu → <strong>Pengaturan</strong> → <strong>Tambah endpoint</strong>, tempel alamat itu sebagai Base URL, lalu pilih model.</li>
+              </ol>
+              <p class="setup-col__note">
+                Tanpa ngrok: <code class="setup-code">cloudflared tunnel --url http://localhost:1234</code>.
+                Tunnel dijalankan di komputer, bukan di HP. Bila tidak bisa membuka terminal,
+                pakai opsi <strong>Cloud</strong> di HP.
+              </p>
+            </article>
             <!-- CLOUD: default, tanpa setup -->
             <article class="setup-card setup-card--cloud">
               <div class="setup-card__head">
                 <h3 class="setup-card__title"><span class="setup-card__emoji" aria-hidden="true">☁️</span> Cloud</h3>
-                <span class="setup-badge setup-badge--accent">rekomendasi, tanpa setup</span>
+                <span class="setup-badge setup-badge--accent">rekomendasi</span>
               </div>
               <p class="setup-card__text">
                 Cloud = provider siap di internet. Tinggal pilih, isi kunci API, langsung belajar.
@@ -228,13 +251,13 @@
             <article class="setup-card">
               <div class="setup-card__head">
                 <h3 class="setup-card__title"><span class="setup-card__emoji" aria-hidden="true">🖥️</span> Local LM Studio</h3>
-                <span class="setup-badge">gratis</span>
+                <span class="setup-badge">desktop</span>
               </div>
               <p class="setup-card__text">
                 LM Studio berjalan di komputermu, gratis, tanpa internet. Karena BimbingKamu dibuka
                 lewat HTTPS, browser memblokir koneksi langsung ke <code>http://127.0.0.1:1234</code>
-                (CORS). Pasang ekstensi Chrome <strong>BimbingKamu - LM Studio Bridge</strong> sekali saja,
-                lalu sambungkan langsung. Tanpa terminal, tanpa ngrok.
+                (CORS). Pasang ekstensi Chrome <strong>BimbingKamu - LM Studio Bridge</strong> sekali saja
+                di browser desktop, lalu sambungkan langsung. Tanpa terminal, tanpa ngrok.
               </p>
               <a class="btn btn--primary btn--sm" href="./assets/lmstudio-bridge-v1.2.0.zip" download style="text-decoration:none">
                 Unduh ekstensi v1.2.0 (.zip)
@@ -249,8 +272,8 @@
               <p class="setup-col__note"><strong>Base URL sesuai perangkat:</strong></p>
               <ul class="setup-list">
                 <li>Komputer ini: <code class="setup-code">http://127.0.0.1:1234</code> atau <code class="setup-code">http://localhost:1234</code></li>
-                <li>HP / laptop lain di Wi-Fi yang sama: <code class="setup-code">http://10.60.196.101:1234</code> (ganti dengan IP komputer yang menjalankan LM Studio).</li>
-                <li>Akses dari luar jaringan: <code class="setup-code">https://abcd.ngrok-free.app</code> (jalankan <code class="setup-code">ngrok http 1234</code>).</li>
+                <li>Laptop lain di Wi-Fi yang sama, dengan ekstensi terpasang: <code class="setup-code">http://10.60.196.101:1234</code> (ganti dengan IP komputer yang menjalankan LM Studio).</li>
+                <li>Akses dari HP atau luar jaringan: pakai kartu <strong>HP / tablet</strong> di atas (URL HTTPS dari tunnel).</li>
               </ul>
               <p class="setup-col__note">
                 <strong>Cek status:</strong> buka <strong>Pengaturan</strong>. Indikator di bagian
