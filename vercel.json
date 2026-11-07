@@ -1,4 +1,6 @@
 {
+  "buildCommand": null,
+  "outputDirectory": ".",
   "routes": [
     {
       "src": "/(assets|vendor|css|js)/.*",
