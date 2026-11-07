@@ -441,6 +441,16 @@
   line-height: 1.5;
 }
 
+/* Status ekstensi bridge: terlihat tanpa membuka DevTools. */
+.bridge-status {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+.bridge-status.is-ok { color: #047857; }
+.bridge-status.is-warn { color: #B45309; }
+
 .field__hint a {
   color: var(--color-accent);
   text-decoration: underline;

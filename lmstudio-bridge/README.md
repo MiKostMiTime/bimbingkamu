@@ -1,6 +1,6 @@
 # BimbingKamu - LM Studio Bridge (Ekstensi Chrome)
 
-Versi **1.1.0**. Ekstensi **Chrome / Edge** (MV3) untuk menghubungkan BimbingKamu
+Versi **1.1.1**. Ekstensi **Chrome / Edge** (MV3) untuk menghubungkan BimbingKamu
 yang berjalan di HTTPS (Vercel) ke **LM Studio lokal** (`http://localhost:1234`)
 atau lewat **ngrok** (`https://*.ngrok-free.dev`, `https://*.ngrok-free.app`),
 tanpa masalah **CORS** & **Private Network Access**.
@@ -20,9 +20,10 @@ dibaca — termasuk chat streaming (SSE).
    (Edge: `edge://extensions`).
 2. Aktifkan **Mode pengembang** (*Developer mode*) di kanan atas.
 3. Klik **Muat yang tak terurai** (*Load unpacked*).
-4. Pilih folder **`lmstudio-bridge`** ini, lalu **Klik Muat** (*Load*).
+4. Pilih folder hasil ekstrak **yang berisi `manifest.json`**, lalu **Klik Muat**
+   (*Load*).
 5. Ekstensi **BimbingKamu - LM Studio Bridge** muncul di daftar dengan versi
-   **1.1.0**. Pastikan saklarnya ON.
+   **1.1.1**. Pastikan saklarnya ON.
 
 ## Penggunaan
 
@@ -66,13 +67,13 @@ Untuk host khusus (domain custom / IP lain), tambahkan polanya di
 Cek di console halaman BimbingKamu:
 
 ```js
-__bkbBridgeDebug.version   // harus '1.1.0'
+__bkbBridgeDebug.version   // harus '1.1.1'
 __bkbBridgeDebug.isTargetUrl('https://contoh.ngrok-free.dev/v1/models') // harus true
 ```
 
-- **`version` bukan `1.1.0`** → browser masih memakai salinan lama. Buka
+- **`version` bukan `1.1.1`** → browser masih memakai salinan lama. Buka
   `chrome://extensions`, hapus ekstensi BimbingKamu yang lama (bisa ada dua
-  kartu), lalu *Load unpacked* folder hasil ekstrak versi 1.1.0.
+  kartu), lalu *Load unpacked* folder hasil ekstrak versi 1.1.1.
 - **`__bkbBridgeDebug` undefined** → content script tidak menyuntik. Pastikan
   tab dibuka di `localhost`, `127.0.0.1`, atau `*.vercel.app`, lalu muat ulang.
 - **`isTargetUrl` true tapi masih CORS** → pastikan `background.js` tidak error

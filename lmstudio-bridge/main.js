@@ -45,7 +45,7 @@
 
   // Versi patch. Naikkan saat aturan target berubah, supaya salinan lama
   // (ekstensi dobel / belum di-reload) bisa dikenali dan digantikan.
-  const VERSION = '1.1.0';
+  const VERSION = '1.1.1';
 
   // Cegah double-patch, TAPI izinkan versi ini menggantikan patch lama.
   // Ekstensi lama tidak boleh menang hanya karena menyuntik lebih dulu.

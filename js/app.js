@@ -99,6 +99,7 @@ const dom = {
   providerSelect: $('providerSelect'),
   addEndpointBtn: $('addEndpointBtn'),
   providerList: $('providerList'),
+  bridgeStatus: $('bridgeStatus'),
   setupGuideToggle: $('setupGuideToggle'),
   setupGuideBody: $('setupGuideBody'),
   connStatus: $('headerConnStatus'),
@@ -219,6 +220,32 @@ function hasActiveChatTarget() {
 function focusChatTarget() {
   if (!state.settings.provider) dom.providerSelect.focus();
   else dom.model.focus();
+}
+
+// Indikator status ekstensi bridge (LM Studio / ngrok). Content script berjalan
+// di MAIN world, jadi objek debug-nya terlihat dari halaman. Indikator ini
+// dibuat supaya pengguna tahu ekstensi sudah benar tanpa membuka DevTools.
+// Samakan dengan VERSION di lmstudio-bridge/main.js + manifest.json.
+const BRIDGE_VERSION = '1.1.1';
+
+function renderBridgeStatus() {
+  const el = dom.bridgeStatus;
+  if (!el) return;
+  const bridge = window.__bkbBridgeDebug;
+  el.classList.remove('is-ok', 'is-warn');
+
+  if (!bridge) {
+    el.classList.add('is-warn');
+    el.textContent = 'Ekstensi bridge belum aktif. Untuk endpoint lokal atau ngrok, pasang ekstensi v' + BRIDGE_VERSION + ' lewat Panduan Setup di bawah.';
+    return;
+  }
+  if (bridge.version !== BRIDGE_VERSION) {
+    el.classList.add('is-warn');
+    el.textContent = 'Ekstensi bridge versi lama terdeteksi (' + (bridge.version || 'tidak dikenal') + '). Perbarui ke v' + BRIDGE_VERSION + ' lewat Panduan Setup di bawah.';
+    return;
+  }
+  el.classList.add('is-ok');
+  el.textContent = 'Ekstensi bridge v' + BRIDGE_VERSION + ' aktif. Endpoint lokal dan ngrok siap dihubungkan.';
 }
 
 // Indikator status koneksi di header chat.
@@ -1398,6 +1425,7 @@ function openSettingsPanel() {
   dom.settingsBackdrop.classList.add('is-open');
   dom.settingsToggle.setAttribute('aria-expanded', 'true');
   if (isMobile()) closeSidebar();
+  renderBridgeStatus(); // cek ulang: ekstensi mungkin dipasang setelah halaman dimuat
   dom.settingsClose.focus(); // fokus pindah ke dalam drawer
 }
 
@@ -2188,6 +2216,7 @@ function init() {
   updateComposer();
   startActiveTimer();
   bindEvents();
+  renderBridgeStatus();
 
   // Endpoint tersimpan dari sesi lalu → segarkan daftar model dari endpoint itu.
   if (state.settings.provider) refreshProviderModelList();
