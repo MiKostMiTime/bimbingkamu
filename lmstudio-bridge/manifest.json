@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "BimbingKamu - LM Studio Bridge",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Menghubungkan BimbingKamu (HTTPS/Vercel) ke LM Studio lokal atau ngrok tanpa masalah CORS & Private Network Access.",
   "host_permissions": [
     "http://localhost:*/*",

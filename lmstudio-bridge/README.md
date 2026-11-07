@@ -1,9 +1,9 @@
-# BimbingKamu — LM Studio Bridge (Ekstensi Chrome)
+# BimbingKamu - LM Studio Bridge (Ekstensi Chrome)
 
-Ekstensi **Chrome / Edge** (MV3) untuk menghubungkan BimbingKamu yang berjalan di
-HTTPS (Vercel) ke **LM Studio lokal** (`http://localhost:1234`) atau lewat
-**ngrok** (`https://*.ngrok-free.app`), tanpa masalah **CORS** & **Private
-Network Access**.
+Versi **1.1.0**. Ekstensi **Chrome / Edge** (MV3) untuk menghubungkan BimbingKamu
+yang berjalan di HTTPS (Vercel) ke **LM Studio lokal** (`http://localhost:1234`)
+atau lewat **ngrok** (`https://*.ngrok-free.dev`, `https://*.ngrok-free.app`),
+tanpa masalah **CORS** & **Private Network Access**.
 
 ## Cara Kerja
 
@@ -21,8 +21,8 @@ dibaca — termasuk chat streaming (SSE).
 2. Aktifkan **Mode pengembang** (*Developer mode*) di kanan atas.
 3. Klik **Muat yang tak terurai** (*Load unpacked*).
 4. Pilih folder **`lmstudio-bridge`** ini, lalu **Klik Muat** (*Load*).
-5. Ekstensi **BimbingKamu — LM Studio Bridge** muncul di daftar. Pastikan
-   saklarnya ON.
+5. Ekstensi **BimbingKamu - LM Studio Bridge** muncul di daftar dengan versi
+   **1.1.0**. Pastikan saklarnya ON.
 
 ## Penggunaan
 
@@ -38,7 +38,9 @@ dibaca — termasuk chat streaming (SSE).
 ## Endpoint yang Didukung Otomatis
 
 - `http://localhost:*`, `http://127.0.0.1:*`, `http://0.0.0.0:*`
-- `https://*.ngrok.app`, `https://*.ngrok-free.app`
+- `https://*.ngrok-free.dev`, `https://*.ngrok-free.app`
+- `https://*.ngrok.dev`, `https://*.ngrok.app`, `https://*.ngrok.io`
+- `https://*.ngrok-free.pizza`, `https://*.ngrok.pizza`
 
 Untuk host khusus (domain custom / IP lain), tambahkan polanya di
 `main.js` → array `TARGET_HOSTS`, lalu muat ulang tab BimbingKamu.
@@ -58,3 +60,23 @@ Untuk host khusus (domain custom / IP lain), tambahkan polanya di
   abort mid-stream bergantung pada koneksi port yang masih aktif.
 - Debug di console: `__bkbBridgeDebug.isTargetUrl('http://localhost:1234')`,
   `.size()` (jumlah request aktif), `.refreshPort()`.
+
+## Pemecahan Masalah
+
+Cek di console halaman BimbingKamu:
+
+```js
+__bkbBridgeDebug.version   // harus '1.1.0'
+__bkbBridgeDebug.isTargetUrl('https://contoh.ngrok-free.dev/v1/models') // harus true
+```
+
+- **`version` bukan `1.1.0`** → browser masih memakai salinan lama. Buka
+  `chrome://extensions`, hapus ekstensi BimbingKamu yang lama (bisa ada dua
+  kartu), lalu *Load unpacked* folder hasil ekstrak versi 1.1.0.
+- **`__bkbBridgeDebug` undefined** → content script tidak menyuntik. Pastikan
+  tab dibuka di `localhost`, `127.0.0.1`, atau `*.vercel.app`, lalu muat ulang.
+- **`isTargetUrl` true tapi masih CORS** → pastikan `background.js` tidak error
+  (buka *service worker* dari kartu ekstensi) dan `host_permissions` sudah
+  memuat domain ngrok tersebut.
+- Content script hanya menyuntik saat halaman dimuat. Setelah mengubah atau
+  memasang ulang ekstensi, selalu **muat ulang tab** (Cmd/Ctrl+Shift+R).

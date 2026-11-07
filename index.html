@@ -233,16 +233,21 @@
                 (CORS). Paling mudah: pasang ekstensi Chrome <strong>BimbingKamu - LM Studio Bridge</strong>
                 sekali saja, lalu sambungkan langsung. Tanpa terminal, tanpa ngrok.
               </p>
-              <a class="btn btn--primary btn--sm" href="./assets/lmstudio-bridge-v1.0.0.zip" download style="text-decoration:none">
-                Unduh ekstensi (.zip)
+              <a class="btn btn--primary btn--sm" href="./assets/lmstudio-bridge-v1.1.0.zip" download style="text-decoration:none">
+                Unduh ekstensi v1.1.0 (.zip)
               </a>
               <ol class="setup-list" style="margin-top:12px">
-                <li>Klik <strong>Unduh ekstensi (.zip)</strong> di atas, lalu <strong>ekstrak</strong> foldernya.</li>
+                <li>Klik <strong>Unduh ekstensi v1.1.0 (.zip)</strong> di atas, lalu <strong>ekstrak</strong> foldernya.</li>
                 <li>Buka <code class="setup-code">chrome://extensions</code>, aktifkan <strong>Mode pengembang</strong> (kanan atas).</li>
                 <li>Klik <strong>Muat yang tak terurai</strong> (<em>Load unpacked</em>), lalu pilih folder hasil ekstrak.</li>
                 <li>Di LM Studio, buka <strong>Settings → Server</strong>: nyalakan server (port 1234) dan centang <strong>Enable CORS</strong>.</li>
                 <li>Tambah endpoint, isi Base URL <code class="setup-code">http://127.0.0.1:1234</code>, klik <strong>Tambah endpoint</strong>, lalu pilih model.</li>
               </ol>
+              <p class="setup-col__note">
+                <strong>Sudah pernah memasang?</strong> Hapus ekstensi lama di
+                <code class="setup-code">chrome://extensions</code>, pasang versi baru, lalu muat ulang
+                tab BimbingKamu. Yang terbaru tertulis <strong>1.1.0</strong> pada kartu ekstensi.
+              </p>
               <p class="setup-col__note">
                 Mau akses dari HP atau komputer lain? Ekstensi hanya berjalan di browser desktop.
                 Buka LM Studio ke luar dengan ngrok: jalankan <code class="setup-code">ngrok http 1234</code>,

@@ -43,9 +43,14 @@
     return _origFetch;
   }
 
-  // Cegah double-patch bila script jalan lebih dari sekali.
-  if (window.__bkbBridgePatched) return;
-  window.__bkbBridgePatched = true;
+  // Versi patch. Naikkan saat aturan target berubah, supaya salinan lama
+  // (ekstensi dobel / belum di-reload) bisa dikenali dan digantikan.
+  const VERSION = '1.1.0';
+
+  // Cegah double-patch, TAPI izinkan versi ini menggantikan patch lama.
+  // Ekstensi lama tidak boleh menang hanya karena menyuntik lebih dulu.
+  if (window.__bkbBridgePatched === VERSION) return;
+  window.__bkbBridgePatched = VERSION;
 
   // --- Saluran port ke background ---
   let port = null;
@@ -233,6 +238,8 @@
 
   // Helper debugging di console: __bkbBridgeDebug.isTargetUrl(url), .size()
   window.__bkbBridgeDebug = {
+    version: VERSION,
+    ngrok: String(NGROK_RE),
     isTargetUrl: (u) => isTargetUrl(u),
     size: () => registry.size,
     refreshPort: ensurePort,
