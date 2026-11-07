@@ -1,6 +1,6 @@
 {
-  "name": "TanyaBukan — Tutor Socratic",
-  "short_name": "TanyaBukan",
+  "name": "BimbingKamu — Tutor Socratic",
+  "short_name": "BimbingKamu",
   "description": "Tutor Socratic berbasis materi milikmu sendiri. Bimbing, bukan jawab.",
   "start_url": "./",
   "scope": "./",
