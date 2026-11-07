@@ -13,7 +13,8 @@
     "build": "if [ -f scripts/build.mjs ]; then node scripts/build.mjs; else echo \"static: bundle prebuilt, skip build\"; fi"
   },
   "devDependencies": {
-    "esbuild": "^0.24.2"
+    "esbuild": "^0.24.2",
+    "playwright-core": "^1.65.0"
   },
   "keywords": [],
   "author": "",
