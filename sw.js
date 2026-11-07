@@ -109,7 +109,11 @@ async function cacheFirst(request) {
     return net;
   } catch {
     // Tanpa jaringan: tetap beri shell agar UI tetap tampil.
-    return caches.match(toAbs('./index.html')) || Response.error();
+    // `await` wajib: caches.match() mengembalikan Promise yang bisa resolve ke
+    // undefined. Tanpa await, respondWith() menerima Promise<undefined> dan
+    // memicu "Failed to convert value to 'Response'".
+    const shell = await caches.match(toAbs('./index.html'));
+    return shell || Response.error();
   }
 }
 
@@ -126,6 +130,8 @@ async function networkFirst(request) {
     }
     return net;
   } catch {
-    return caches.match(request) || Response.error();
+    // `await` wajib agar fallback benar-benar Response (cache miss = undefined).
+    const cached = await caches.match(request);
+    return cached || Response.error();
   }
 }

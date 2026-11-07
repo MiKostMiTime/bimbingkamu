@@ -407,6 +407,7 @@ function openEndpointModal(id) {
 
   const modalRef = showModal({
     title: isEdit ? 'Sunting endpoint' : 'Tambah endpoint',
+    showClose: false,
     body: `
       <div class="field">
         <label class="field__label" for="epEditUrl">Base URL</label>

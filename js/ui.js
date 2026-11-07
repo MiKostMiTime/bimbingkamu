@@ -39,7 +39,7 @@ export function showToast(message, type = 'info') {
 
 // ===== MODAL =====
 // Fokus sederhana (trap) + tutup via Escape & overlay.
-export function showModal({ title, text, body = '', actions = [], onDismiss, closeLabel = 'Tutup' }) {
+export function showModal({ title, text, body = '', actions = [], onDismiss, closeLabel = 'Tutup', showClose = true }) {
   const root = document.getElementById('modalRoot');
   const previousFocus = document.activeElement;
 
@@ -60,11 +60,19 @@ export function showModal({ title, text, body = '', actions = [], onDismiss, clo
   h.textContent = title;
   header.appendChild(h);
 
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'modal__close';
-  closeBtn.setAttribute('aria-label', closeLabel);
-  closeBtn.innerHTML = ICONS.close;
-  header.appendChild(closeBtn);
+  // Tombol X hanya dipasang bila modal tidak punya tombol tutup/batal sendiri.
+  // Modal yang sudah punya tombol "Batal" memakai showClose: false agar tidak
+  // ada dua kontrol tutup yang berulang.
+  let closeBtn = null;
+  if (showClose) {
+    closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'modal__close';
+    closeBtn.setAttribute('aria-label', closeLabel);
+    closeBtn.innerHTML = ICONS.close;
+    closeBtn.addEventListener('click', close);
+    header.appendChild(closeBtn);
+  }
   modal.appendChild(header);
 
   if (text) {
@@ -145,7 +153,7 @@ export function showModal({ title, text, body = '', actions = [], onDismiss, clo
   });
 
   const firstBtn = buttons.find((b) => b.classList.contains('btn--primary')) || buttons[0] || closeBtn;
-  firstBtn.focus();
+  if (firstBtn) firstBtn.focus();
 
   return { close, modal };
 }
@@ -155,6 +163,7 @@ export function showConfirm({ title, text, confirmLabel = 'Ya, lanjutkan', kind 
   return showModal({
     title,
     text,
+    showClose: false,
     actions: [
       { label: 'Batal', kind: 'secondary' },
       { label: confirmLabel, kind, onClick: onConfirm },

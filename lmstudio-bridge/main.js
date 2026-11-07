@@ -13,10 +13,14 @@
 
   // --- Target: endpoint mana saja yang dialihkan (bisa diedit) ---
   const TARGET_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0'];
+  // Ngrok memakai beberapa TLD (app, dev, io, pizza, ...). Cocokkan semua
+  // subdomainnya agar URL seperti *.ngrok-free.dev ikut dialihkan. Ini penyebab
+  // error CORS paling umum: domain ngrok tidak cocok, fetch jatuh ke browser.
+  const NGROK_RE = /(^|\.)ngrok(-free)?\.(app|dev|io|pizza|pro|page)$/;
   function isTargetHost(host) {
     host = (host || '').toLowerCase().replace(/:\d+$/, '');
     if (TARGET_HOSTS.includes(host)) return true;
-    if (host.endsWith('.ngrok.app') || host.endsWith('.ngrok-free.app')) return true;
+    if (NGROK_RE.test(host)) return true;
     return false;
   }
   function targetHref(input) {
