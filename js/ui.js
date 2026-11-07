@@ -175,11 +175,11 @@ export function showConfirm({ title, text, confirmLabel = 'Ya, lanjutkan', kind 
 const ONBOARDING_STEPS = [
   {
     title: 'Hubungkan endpoint AI',
-    text: 'Masukkan Base URL endpoint [OI]-compatible (mis. http://127.0.0.1:1234 untuk LM Studio). Daftar model diambil otomatis dari endpoint — kunci API hanya perlu bila endpoint-mu butuh auth.',
+    text: 'Masukkan Base URL endpoint [OI]-compatible (mis. http://127.0.0.1:1234 untuk LM Studio). Daftar model diambil otomatis dari endpoint. Kunci API hanya perlu bila endpoint-mu butuh auth.',
   },
   {
     title: 'Isi materi belajarmu',
-    text: 'Di Pengaturan (tombol gear di kanan atas), lampirkan file .txt / .md / .pdf / .docx ke panel Materi — tarik ke kotak unggah atau klik. Tutor diarahkan menjawab dari materi ini dan menandai kutipan yang tidak ditemukan di materi, tetapi tetap periksa kembali jawabannya.',
+    text: 'Di Pengaturan (tombol gear di kanan atas), lampirkan file .txt / .md / .pdf / .docx ke panel Materi: tarik ke kotak unggah atau klik. Tutor diarahkan menjawab dari materi ini dan menandai kutipan yang tidak ditemukan di materi, tetapi tetap periksa kembali jawabannya.',
   },
   {
     title: 'Siap mulai?',
@@ -265,7 +265,7 @@ export function showOnboarding({ onComplete, onSkip, onConnect, onModel }) {
         wrap.style.display = '';
         sel.innerHTML = models.map((id) => `<option value="${id}">${id}</option>`).join('');
         connected = true;
-        status.textContent = `Terhubung — ${models.length} model tersedia.`;
+        status.textContent = `Terhubung. ${models.length} model tersedia.`;
       } catch (err) {
         status.textContent = (err && err.message) || 'Gagal terhubung. Periksa URL/kunci.';
         btn.disabled = false;
@@ -408,7 +408,7 @@ export function exportConversation({ meta, messages }) {
   lines.push('# Percakapan BimbingKamu', '');
   lines.push(`- **Tanggal:** ${date}`);
   lines.push(`- **Mode:** ${getModeLabel(meta.mode)}`);
-  lines.push(`- **Kedalaman:** ${meta.level} — ${getLevelLabel(meta.level)}`);
+  lines.push(`- **Kedalaman:** ${meta.level} (${getLevelLabel(meta.level)})`);
   lines.push(`- **Durasi aktif:** ${meta.duration}`);
   lines.push(`- **Jumlah giliran:** ${meta.turns}`);
   lines.push(`- **Jumlah petunjuk:** ${meta.hints ?? 0}`);

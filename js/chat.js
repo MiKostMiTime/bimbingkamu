@@ -647,7 +647,7 @@ export function renderEmptyState(root, { onStart, onOpenSettings, status } = {})
     <h2 class="empty-state__title">Mulai belajar dengan BimbingKamu</h2>
     <p class="empty-state__text">
       Siapkan dua hal di Pengaturan (gear, kanan atas): hubungkan endpoint & pilih model, lalu lampirkan file materi. Setelah itu tanya
-      apa saja — tutor akan menjelaskan materimu, mengecek pemahamanmu, dan
+      apa saja. Tutor akan menjelaskan materimu, mengecek pemahamanmu, dan
       membimbingmu sampai paham.
     </p>
     ${checklist}

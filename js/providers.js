@@ -140,7 +140,7 @@ export async function probeEndpoint(baseUrl, apiKey = '') {
       lastErr = {
         type: 'network',
         message:
-          'Tidak bisa terhubung ke endpoint. Periksa URL & koneksi — bila endpoint lokal (LM Studio/Ollama), aktifkan "Enable CORS" / CORS di pengaturan server-nya.',
+          'Tidak bisa terhubung ke endpoint. Periksa URL & koneksi. Bila endpoint lokal (LM Studio/Ollama), aktifkan "Enable CORS" / CORS di pengaturan server-nya.',
       };
       continue; // coba kandidat berikutnya
     }
