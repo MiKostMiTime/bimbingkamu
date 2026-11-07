@@ -12,14 +12,29 @@
   'use strict';
 
   // --- Target: endpoint mana saja yang dialihkan (bisa diedit) ---
-  const TARGET_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0'];
+  // Termasuk LAN IP (10.x, 172.16-31.x, 192.168.x), link-local, CGNAT
+  // (100.64/10, dipakai Tailscale), IPv6 loopback, dan nama *.local.
+  // Chrome match pattern tidak mendukung CIDR, jadi IP privat dideteksi
+  // di sini, bukan lewat host_permissions.
+  const TARGET_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', '::1'];
+  const PRIVATE_V4_RE = /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/;
   // Ngrok memakai beberapa TLD (app, dev, io, pizza, ...). Cocokkan semua
   // subdomainnya agar URL seperti *.ngrok-free.dev ikut dialihkan. Ini penyebab
   // error CORS paling umum: domain ngrok tidak cocok, fetch jatuh ke browser.
   const NGROK_RE = /(^|\.)ngrok(-free)?\.(app|dev|io|pizza|pro|page)$/;
   function isTargetHost(host) {
-    host = (host || '').toLowerCase().replace(/:\d+$/, '');
+    host = (host || '').toLowerCase();
+    // Buang port, tetapi pertahankan kurung IPv6: [::1]:1234 -> [::1].
+    if (host.charAt(0) === '[') {
+      const end = host.indexOf(']');
+      if (end !== -1) host = host.slice(0, end + 1);
+    } else {
+      host = host.replace(/:\d+$/, '');
+    }
+    host = host.replace(/^\[|\]$/g, '');
     if (TARGET_HOSTS.includes(host)) return true;
+    if (host.endsWith('.local')) return true;
+    if (PRIVATE_V4_RE.test(host)) return true;
     if (NGROK_RE.test(host)) return true;
     return false;
   }
@@ -30,7 +45,7 @@
   function isTargetUrl(input) {
     const href = targetHref(input);
     if (!href) return false;
-    return isTargetHost(new URL(href).host);
+    return isTargetHost(new URL(href).hostname);
   }
 
   // --- Ambil fetch asli halaman (lazy agar aman di document_start) ---
@@ -45,25 +60,62 @@
 
   // Versi patch. Naikkan saat aturan target berubah, supaya salinan lama
   // (ekstensi dobel / belum di-reload) bisa dikenali dan digantikan.
-  const VERSION = '1.1.1';
+  const VERSION = '1.2.0';
 
   // Cegah double-patch, TAPI izinkan versi ini menggantikan patch lama.
   // Ekstensi lama tidak boleh menang hanya karena menyuntik lebih dulu.
   if (window.__bkbBridgePatched === VERSION) return;
   window.__bkbBridgePatched = VERSION;
 
-  // --- Saluran port ke background ---
-  let port = null;
+  // --- Saluran ke relay (ISOLATED world) lewat window.postMessage ---
+  // MAIN world tidak punya chrome.runtime, jadi tidak boleh memanggil
+  // chrome.runtime.connect() di sini. relay.js yang memegang port ke
+  // background dan meneruskan pesan lewat postMessage.
+  const CHANNEL = '__bkbBridge';
   const registry = new Map(); // id -> { meta, controller, pending, done, _finish, _reject, _timer, _abortHandler }
   let counter = 0;
 
-  function ensurePort() {
-    if (port) return port;
-    port = chrome.runtime.connect({ name: 'bkb-lmstudio-bridge' });
-    port.onMessage.addListener(onPortMessage);
-    port.onDisconnect.addListener(() => { port = null; });
-    return port;
+  let relayReady = false;
+  const outbox = [];
+  let pingTimer = null;
+
+  function rawPost(msg) {
+    msg[CHANNEL] = true;
+    try { window.postMessage(msg, '*'); } catch {}
   }
+
+  function pingRelay() {
+    if (relayReady || pingTimer) return;
+    let tries = 0;
+    pingTimer = setInterval(() => {
+      rawPost({ kind: 'ping' });
+      if (relayReady || ++tries >= 20) { clearInterval(pingTimer); pingTimer = null; }
+    }, 250);
+    rawPost({ kind: 'ping' });
+  }
+
+  function post(msg) {
+    if (relayReady) { rawPost(msg); return; }
+    // Relay mungkin belum siap (urutan injeksi). Simpan dulu, lalu kirim
+    // setelah relay mengumumkan siap.
+    if (outbox.length < 50) outbox.push(msg);
+    pingRelay();
+  }
+
+  window.addEventListener('message', (event) => {
+    if (event.source !== window) return;
+    const data = event.data;
+    if (!data || data[CHANNEL] !== true) return;
+    if (data.kind === 'ready') {
+      relayReady = true;
+      if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+      const pending = outbox.splice(0);
+      for (const msg of pending) rawPost(msg);
+      return;
+    }
+    if (data.kind === 'res') onPortMessage(data.payload);
+  });
+  pingRelay();
 
   // --- Utilitas encode/decode base64 (UTF8-safe) ---
   function bytesToB64(bytes) {
@@ -185,7 +237,6 @@
 
   // --- Inti: alihkan fetch target ke background ---
   function proxyFetch(input, init) {
-    const port = ensurePort();
     const id = 'px' + (++counter);
     const urlStr = typeof input === 'string' ? input : (input && input.href) || String(input);
     const absUrl = new URL(urlStr, window.location.href).href;
@@ -200,12 +251,12 @@
 
     // Dukungan abort (tombol "Berhendi"): kirim sinyal ke background.
     if (signal) {
-      const onAbort = () => sendReq(port, { cmd: 'abort', id });
+      const onAbort = () => post({ kind: 'abort', id });
       signal.addEventListener('abort', onAbort, { once: true });
       registry.get(id)._abortHandler = onAbort;
     }
 
-    sendReq(port, { type: 'req', id, method, url: absUrl, headers, body: bodySpec });
+    post({ kind: 'req', id, method, url: absUrl, headers, body: bodySpec });
 
     return new Promise((resolve, reject) => {
       const r = registry.get(id);
@@ -224,8 +275,6 @@
     });
   }
 
-  function sendReq(port, msg) { try { port.postMessage(msg); } catch {} }
-
   // --- Pasang patch ke window.fetch ---
   const originalFetch = getOrigFetch();
   window.fetch = function (input, init) {
@@ -240,8 +289,9 @@
   window.__bkbBridgeDebug = {
     version: VERSION,
     ngrok: String(NGROK_RE),
+    private: String(PRIVATE_V4_RE),
     isTargetUrl: (u) => isTargetUrl(u),
     size: () => registry.size,
-    refreshPort: ensurePort,
+    relay: () => relayReady,
   };
 })();

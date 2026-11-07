@@ -226,7 +226,7 @@ function focusChatTarget() {
 // di MAIN world, jadi objek debug-nya terlihat dari halaman. Indikator ini
 // dibuat supaya pengguna tahu ekstensi sudah benar tanpa membuka DevTools.
 // Samakan dengan VERSION di lmstudio-bridge/main.js + manifest.json.
-const BRIDGE_VERSION = '1.1.1';
+const BRIDGE_VERSION = '1.2.0';
 
 function renderBridgeStatus() {
   const el = dom.bridgeStatus;
@@ -236,7 +236,7 @@ function renderBridgeStatus() {
 
   if (!bridge) {
     el.classList.add('is-warn');
-    el.textContent = 'Ekstensi bridge belum aktif. Untuk endpoint lokal atau ngrok, pasang ekstensi v' + BRIDGE_VERSION + ' lewat Panduan Setup di bawah.';
+    el.textContent = 'Ekstensi bridge belum aktif. Untuk endpoint lokal, LAN IP, atau ngrok, pasang ekstensi v' + BRIDGE_VERSION + ' lewat Panduan Setup di bawah.';
     return;
   }
   if (bridge.version !== BRIDGE_VERSION) {
@@ -245,7 +245,7 @@ function renderBridgeStatus() {
     return;
   }
   el.classList.add('is-ok');
-  el.textContent = 'Ekstensi bridge v' + BRIDGE_VERSION + ' aktif. Endpoint lokal dan ngrok siap dihubungkan.';
+  el.textContent = 'Ekstensi bridge v' + BRIDGE_VERSION + ' aktif. Endpoint lokal, LAN IP, dan ngrok siap dihubungkan.';
 }
 
 // Indikator status koneksi di header chat.
@@ -590,7 +590,7 @@ function refreshEmptyState() {
 function persistSessions() {
   const ok = storage.set(STORAGE_KEYS.sessions, state.sessions);
   storage.set(STORAGE_KEYS.activeSession, state.activeId);
-  if (!ok) showToast('Penyimpanan browser penuh — riwayat sesi mungkin tidak lengkap.', 'error');
+  if (!ok) showToast('Penyimpanan browser penuh. Riwayat sesi mungkin tidak lengkap.', 'error');
 }
 
 // Auto-save sesi aktif tiap giliran + tiap perubahan file lampiran
@@ -1616,7 +1616,7 @@ function renderTokenStat() {
   if (!dom.tokenTotal) return;
   const stats = sessionStats();
   if (!stats.lastPrompt && !stats.completion) {
-    dom.tokenTotal.textContent = '—';
+    dom.tokenTotal.textContent = '0';
     dom.tokenTotal.removeAttribute('style');
     dom.tokenTotal.title = 'Belum ada token tercatat.';
     return;
@@ -1649,7 +1649,7 @@ function renderTokenStat() {
         const c = cachedUsdIdr();
         if (c) {
           const menit = Math.round(c.ageMs / 60000);
-          title += menit < 1 ? ' (baru saja diperbarui)' : ` (${menit} mnt lalu${c.stale ? ', usang — cari internet untuk perbarui' : ''})`;
+          title += menit < 1 ? ' (baru saja diperbarui)' : ` (${menit} mnt lalu${c.stale ? ', usang, cari internet untuk perbarui' : ''})`;
         }
       }
       title += '.';

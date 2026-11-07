@@ -13,8 +13,8 @@
 // =========================================================
 
 const ports = new Set();
-// id -> ReadableStreamDefaultController aktif (untuk abort mid-stream).
-const activeControllers = new Map();
+// id -> { controller, reader } untuk menghentikan fetch/stream yang aktif.
+const activeRequests = new Map();
 
 function pairsToHeaders(pairs) {
   const h = new Headers();
@@ -48,7 +48,7 @@ function send(port, msg) {
 }
 
 // Ambil reader dari respons & alirkan chunk-nya ke content script.
-async function streamResponse(port, id, res) {
+async function streamResponse(port, id, res, record) {
   // Metadata awal (status/ok/header) dikirim dulu agar aplikasi bisa
   // membaca res.ok & res.status seketika setelah fetch resolves.
   send(port, {
@@ -63,12 +63,11 @@ async function streamResponse(port, id, res) {
   // Respons tanpa body (mis. 204 dari OPTIONS preflight) -> langsung tutup.
   if (!res.body || typeof res.body.getReader !== 'function') {
     send(port, { type: 'end', id });
-    activeControllers.delete(id);
     return;
   }
 
   const reader = res.body.getReader();
-  activeControllers.set(id, reader);
+  record.reader = reader;
   try {
     for (;;) {
       const { done, value } = await reader.read();
@@ -83,9 +82,12 @@ async function streamResponse(port, id, res) {
     }
     send(port, { type: 'end', id });
   } catch (err) {
-    send(port, { type: 'error', id, message: (err && err.message) || 'Stream error' });
+    // Abort yang disengaja bukan kegagalan: cukup tutup stream.
+    if (!(err && err.name === 'AbortError')) {
+      send(port, { type: 'error', id, message: (err && err.message) || 'Stream error' });
+    }
   } finally {
-    activeControllers.delete(id);
+    activeRequests.delete(id);
   }
 }
 
@@ -94,34 +96,69 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(() => ports.delete(port));
 
   port.onMessage.addListener(async (msg) => {
-    if (msg.type !== 'req') return;
-    const { id, method, url, headers, body: bodySpec } = msg;
+    if (!msg || typeof msg !== 'object') return;
+    const id = msg.id;
+    if (typeof id !== 'string' || !id) return;
 
-    // Tangkap abort dari aplikasi (tombol "Berhendi") untuk memutus stream.
-    if (msg.type === 'abort' || msg.cmd === 'abort') {
-      const reader = activeControllers.get(id);
-      if (reader) {
-        try { await reader.abort(); } catch {}
+    // Abort HARUS ditangani sebelum guard `type === 'req'`, karena pesan
+    // abort tidak membawa type 'req' (dulu cabang ini tidak pernah tercapai).
+    if (msg.cmd === 'abort' || msg.type === 'abort') {
+      const rec = activeRequests.get(id);
+      if (rec) {
+        try { rec.controller.abort(); } catch {}
+        if (rec.reader) { try { await rec.reader.cancel(); } catch {} }
+        activeRequests.delete(id);
       }
       return;
     }
 
+    if (msg.type !== 'req') return;
+    const { headers, body: bodySpec } = msg;
+
+    // Validasi URL: hanya http/https, tanpa kredensial di dalam URL.
+    let parsed;
+    try { parsed = new URL(msg.url); } catch {
+      send(port, { type: 'error', id, message: 'URL endpoint tidak valid.' });
+      return;
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      send(port, { type: 'error', id, message: 'Protokol endpoint harus http atau https.' });
+      return;
+    }
+    if (parsed.username || parsed.password) {
+      send(port, { type: 'error', id, message: 'URL endpoint tidak boleh memuat kredensial.' });
+      return;
+    }
+
+    const controller = new AbortController();
+    const record = { controller, reader: null };
+    activeRequests.set(id, record);
+
     try {
-      const init = { method, headers: pairsToHeaders(headers), redirect: 'follow' };
+      const init = {
+        method: String(msg.method || 'GET').toUpperCase(),
+        headers: pairsToHeaders(headers),
+        redirect: 'follow',
+        signal: controller.signal,
+      };
       const decoded = await decodeBody(bodySpec);
       if (decoded !== undefined) init.body = decoded;
 
       let res;
       try {
-        res = await fetch(url, init);
+        res = await fetch(parsed.href, init);
       } catch (err) {
-        send(port, { type: 'error', id, message: (err && err.message) || 'Fetch gagal' });
+        if (!(err && err.name === 'AbortError')) {
+          send(port, { type: 'error', id, message: (err && err.message) || 'Fetch gagal' });
+        }
         return;
       }
 
-      await streamResponse(port, id, res);
+      await streamResponse(port, id, res, record);
     } catch (err) {
       send(port, { type: 'error', id, message: (err && err.message) || 'Error' });
+    } finally {
+      activeRequests.delete(id);
     }
   });
 });
