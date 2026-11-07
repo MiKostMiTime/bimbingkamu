@@ -233,11 +233,23 @@ function updateConnStatus(stateOverride) {
 
 // Isi dropdown model (#modelSelect) berdasarkan endpoint TERPILIH.
 // Dipanggil saat load, ganti endpoint, dan setelah hubungkan endpoint.
+// Tampilkan/sembunyikan indikator muat di panel Endpoint & Model saat endpoint
+// atau daftar model sedang diambil dari server. Hanya menambah kelas CSS
+// (.panel--loading) agar perbaikan UI berjalan tanpa mengubah alur yang ada.
+function togglePanelLoading(panelId, on) {
+  const panel = $(panelId);
+  if (panel) panel.classList.toggle('panel--loading', on);
+}
+
+// ===== DAFTAR MODEL PER ENDPOINT =====
+// Ambil daftar id model dari endpoint terpilih (listModels), lalu isi dropdown
+// model. Gagal → tandai status koneksi error. Saat memuat, panel diberi indikator.
 async function refreshProviderModelList() {
   updateConnStatus(state.settings.provider ? 'ok' : 'idle');
   if (!state.settings.provider) return;
   const provider = currentProviders()[state.settings.provider];
   if (!provider) return;
+  togglePanelLoading('panelProvider', true);
   try {
     const ids = await listModels(activeApiKey(), provider);
     if (!ids.length) {
@@ -269,6 +281,8 @@ async function refreshProviderModelList() {
   } catch (err) {
     updateConnStatus('error');
     console.warn('[BimbingKamu] gagal memuat daftar model endpoint:', err && err.message);
+  } finally {
+    togglePanelLoading('panelProvider', false);
   }
 }
 
@@ -290,7 +304,13 @@ function renderProviderOptions() {
 // opsional) → pilih otomatis → ambil daftar model. Return daftar id model
 // (dipakai onboarding). Throw error ramah bila endpoint tak merespons.
 async function connectEndpoint({ baseUrl, name, key, providerId }) {
-  const { modelsPath, chatPath } = await probeEndpoint(baseUrl, key);
+  let modelsPath, chatPath;
+  togglePanelLoading('panelProvider', true);
+  try {
+    ({ modelsPath, chatPath } = await probeEndpoint(baseUrl, key));
+  } finally {
+    togglePanelLoading('panelProvider', false);
+  }
   const host = baseUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
   // Mode edit: pakai id endpoint lama; mode tambah: buat id baru.
   const id = providerId || 'ep-' + Math.random().toString(36).slice(2, 7);

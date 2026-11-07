@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "BimbingKamu — LM Studio Bridge",
+  "version": "1.0.0",
+  "description": "Menghubungkan BimbingKamu (HTTPS/Vercel) ke LM Studio lokal atau ngrok tanpa masalah CORS & Private Network Access.",
+  "host_permissions": [
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*",
+    "http://0.0.0.0:*/*",
+    "https://*.ngrok.app/*",
+    "https://*.ngrok-free.app/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:*/*",
+        "http://127.0.0.1:*/*",
+        "https://*.vercel.app/*"
+      ],
+      "all_frames": true,
+      "run_at": "document_start",
+      "world": "MAIN",
+      "js": ["main.js"]
+    }
+  ]
+}
