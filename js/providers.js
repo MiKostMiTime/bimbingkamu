@@ -31,6 +31,24 @@ const PROXY_PATH = '/api/proxy';
 // cepat, jadi tak pernah menyentuh batas ini.
 const DIRECT_TIMEOUT_MS = 12000;
 
+// ===== DIAGNOSTIK FETCH (PNA/CORS) =====
+// Catat setiap keputusan providerFetch ke localStorage agar bisa dibaca ulang
+// di perangkat — console mobile sering hilang saat error. Format: array
+// { t, k:kind, d:detail }. Baca dengan:
+//   JSON.parse(localStorage.getItem('bimbingkamu._fetchLog') || '[]')
+const FETCH_LOG_KEY = 'bimbingkamu._fetchLog';
+const FETCH_LOG_MAX = 40;
+function logFetch(kind, detail = '') {
+  try {
+    let arr = [];
+    try { arr = JSON.parse(localStorage.getItem(FETCH_LOG_KEY) || '[]'); } catch {}
+    if (!Array.isArray(arr)) arr = [];
+    arr.push({ t: Date.now(), k: kind, d: String(detail).slice(0, 240) });
+    if (arr.length > FETCH_LOG_MAX) arr = arr.slice(-FETCH_LOG_MAX);
+    localStorage.setItem(FETCH_LOG_KEY, JSON.stringify(arr));
+  } catch {}
+}
+
 function headersToPairs(headers) {
   const out = [];
   if (!headers) return out;
@@ -58,25 +76,21 @@ async function proxyFetch(targetUrl, init = {}) {
 }
 
 // Fetch provider: coba langsung; bila TIDAK sukses → fallback ke /api/proxy.
-// Lokal (same-network) lewat jalur langsung (cepat). Dua pemici fallback:
-//   1. THROW: fetch melempar TypeError (PNA/CORS untuk endpoint remote). Ini
-//      yang terjadi di Safari/desktop → fallback jalan.
-//   2. HANG / OPAQUE: mobile Chromium di bawah PNA/CORS + service worker aktif
-//      kadang TIDAK melempar error — hanya menggantung (>12s) atau mengembalikan
-//      Response "opaque" (status 0 / type 'opaque'). Tanpa deteksi ini, fallback
-//      tak pernah terpicu → UI stuck spinner. Timeout internal + pemeriksaan
-//      status/opaque menangkap kedua pola ini.
-// init.signal pemanggil (tombol Berhenti chat) tetap hormati: langsung dipakai
-// untuk jalur proksi, dan dicerminkan ke controller timeout jalur langsung.
+// Lokal (same-network) lewat jalur langsung (cepat). Fallback terpicu bila:
+//   1. THROW     : fetch LANGSUNG mempar error (PNA/CORS — Safari/desktop).
+//   2. OPAQUE    : mobile Chromium mengembalikan Response opaque (status 0 /
+//                  type 'opaque') tanpa mempar error.
+//   3. TIMEOUT   : fetch LANGSUNG belum selesai ~12s. Dipakai RACE dengan timer
+//                  agar fallback jalan TANPA bergantung abort() membuat fetch
+//                  langsung reject — pola yang tak andal di mobile Chromium
+//                  (di sini fetch bisa tetap "hidup" walau sudah dibatalkan).
+// init.signal pemanggil (tombol Berhenti) tetap hormati: dicerminkan ke timer
+// dan dipakai juga di jalur proksi.
 export async function providerFetch(targetUrl, init = {}) {
   const callerSignal = init.signal || null;
-
-  // Controller internal jalur langsung: gabungan timer timeout + cermin
-  // pembatalan pemanggil (tombol Berhenti). Jalur proksi memakai
-  // callerSignal asli tombol Berhenti tetap bekerja di dalam proksi.
   const acDirect = new AbortController();
-  let timer = setTimeout(() => acDirect.abort(), DIRECT_TIMEOUT_MS);
 
+  // Cermin pembatalan pemanggil (tombol Berhenti) ke controller langsung.
   function onCallerAbort() {
     if (!acDirect.signal.aborted) acDirect.abort();
   }
@@ -85,24 +99,59 @@ export async function providerFetch(targetUrl, init = {}) {
     else callerSignal.addEventListener('abort', onCallerAbort, { once: true });
   }
 
-  try {
-    let res;
-    try {
-      // Jalur langsung: hormati timeout + tombol Berhenti pemanggil.
-      res = await fetch(targetUrl, { ...init, signal: acDirect.signal });
-    } catch {
-      // Hang / PNA/CORS → fallback proksi (bebas CORS + PNA dari sisi server).
-      return proxyFetch(targetUrl, init);
-    }
-    // Mobile Chromium: respons opaque (status 0) tanpa lempar error → fallback.
-    if (res.type === 'opaque' || res.status === 0) {
-      return proxyFetch(targetUrl, init);
-    }
-    return res;
-  } finally {
+  let settled = false;
+  let timer;
+  const cleanup = () => {
     clearTimeout(timer);
     if (callerSignal) callerSignal.removeEventListener('abort', onCallerAbort);
+  };
+
+  // Fallback proksi — jalur andal untuk endpoint remote (bebas CORS + PNA).
+  async function toProxy() {
+    logFetch('proxy', `→ ${targetUrl}`);
+    try {
+      const res = await proxyFetch(targetUrl, init);
+      logFetch('proxy-ok', `${res.status} type=${res.type} ok=${res.ok}`);
+      return res;
+    } catch (e) {
+      const msg = (e && e.message) || String(e);
+      logFetch('proxy-threw', msg.slice(0, 240));
+      throw e;
+    }
   }
+
+  // Jalur langsung: menang bila selesai lebih dulu dari timer. Bila opaque /
+  // status 0 / mempar error → proksi (hanya bila timer belum menang).
+  const direct = fetch(targetUrl, { ...init, signal: acDirect.signal })
+    .then(async (res) => {
+      if (settled) return;
+      if (res.type === 'opaque' || res.status === 0) {
+        logFetch('opaque', `status=${res.status} type=${res.type}`);
+        settled = true; cleanup(); return toProxy();
+      }
+      logFetch('direct-ok', `status=${res.status} type=${res.type} ok=${res.ok}`);
+      settled = true; cleanup(); return res;
+    })
+    .catch(async () => {
+      if (settled) return;
+      logFetch('direct-threw', 'fetch LANGSUNG mempar error → proksi');
+      settled = true; cleanup(); return toProxy();
+    });
+
+  // Timer: bila langsung belum selesai ~12s → proksi SEGERA (tanpa menunggu
+  // fetch langsung reject). Race menang yang lebih dulu settle.
+  const timedFallback = new Promise((resolve) => {
+    timer = setTimeout(async () => {
+      if (settled) return;
+      logFetch('timeout', `langsung >${DIRECT_TIMEOUT_MS}ms → proksi`);
+      settled = true;
+      acDirect.abort(); // hentikan fetch latar belakang
+      cleanup();
+      try { resolve(await toProxy()); } catch (e) { resolve(Promise.reject(e)); }
+    }, DIRECT_TIMEOUT_MS);
+  });
+
+  return Promise.race([direct, timedFallback]);
 }
 
 // Registry bawaan KOSONG — provider hanya ada bila user menambahkannya
