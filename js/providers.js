@@ -236,7 +236,9 @@ export async function probeEndpoint(baseUrl, apiKey = '') {
 export async function fetchContextLimit(provider, apiKey, model) {
   if (!provider || !provider.baseUrl || !model) return null;
   try {
-    const res = await fetch(`${provider.baseUrl}/api/v0/models`, { headers: authHeader(apiKey) });
+    // providerFetch → fallback ke /api/proxy bila fetch LANGSUNG gagal (PNA/CORS
+    // untuk endpoint remote/ngrok). Tanpa ini, endpoint publik tetap net::ERR_FAILED.
+    const res = await providerFetch(`${provider.baseUrl}/api/v0/models`, { headers: authHeader(apiKey) });
     if (!res.ok) return null;
     const data = await res.json();
     const list = Array.isArray(data.data) ? data.data : [];
@@ -263,7 +265,7 @@ export async function fetchModelPricing(provider, apiKey, model) {
   // 3) OpenRouter → live pricing dari endpoint-nya.
   if (/openrouter\.ai/i.test(provider.baseUrl)) {
     try {
-      const res = await fetch('https://openrouter.ai/api/v1/models', { headers: authHeader(apiKey) });
+      const res = await providerFetch('https://openrouter.ai/api/v1/models', { headers: authHeader(apiKey) });
       if (res.ok) {
         const data = await res.json();
         const found = (data.data || []).find((m) => m && (m.id === model || String(m.id || '').endsWith(`/${model}`)));
@@ -281,7 +283,7 @@ export async function fetchModelPricing(provider, apiKey, model) {
 // Deteksi LM Studio: /api/v0/models merespons ok → endpoint lokal.
 async function probeLMStudio(provider, apiKey) {
   try {
-    const res = await fetch(`${provider.baseUrl}/api/v0/models`, { headers: authHeader(apiKey) });
+    const res = await providerFetch(`${provider.baseUrl}/api/v0/models`, { headers: authHeader(apiKey) });
     return res.ok;
   } catch {
     return false;
