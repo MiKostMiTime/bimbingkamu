@@ -52,7 +52,7 @@ function sendJson(res, status, obj) {
 }
 
 export default async function handler(req, res) {
-  const method = String(req.method || 'GET').toUpperCase();
+  const method = String(params.get('method') || req.method || 'GET').toUpperCase();
   let q;
   try { q = new URL(req.url, 'https://proxy'); } catch { q = new URL('/api/proxy', 'https://proxy'); }
   const params = q.searchParams;
