@@ -24,6 +24,10 @@
       "src": "/manifest\\.(json|webmanifest)",
       "headers": { "Cache-Control": "public, max-age=86400" }
     },
+    {
+      "src": "/api/(.*)",
+      "headers": { "Cache-Control": "public, max-age=0, must-revalidate" }
+    },
     { "src": "/(.*)", "dest": "/index.html" }
   ]
 }

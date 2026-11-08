@@ -8,6 +8,59 @@
 // =========================================================
 import { mapApiError, extractSources } from './api.js';
 
+// ===== PROXY & providerFetch (PNA/CORS) =====
+// Masalah: aplikasi dijalankan sebagai halaman HTTPS di Vercel. Bila endpoint
+// ditambahkan user berupa tunnel publik (mis. ngrok: https://....ngrok-free.dev),
+// browser mengirim OPTIONS preflight PNA; server membalas 200 + Access-Control-
+// Allow-Origin:* TAPI tanpa Access-Control-Allow-Private-Network → Chrome menolak
+// respons dengan net::ERR_FAILED (fetch melempar TypeError "Failed to fetch").
+// Endpoint lokal (same-network) tidak terkena PNA, jadi tetap jalan langsung.
+//
+// Solusi: providerFetch() coba fetch LANGSUNG dulu; bila gagal → fallback ke
+// proksi same-origin /api/proxy (Vercel). Proksi melakukan fetch dari SISI SERVER
+// (bebas CORS + PNA) lalu mengembalikan envelope JSON {status,ok,headers,body}
+// yang dibungkus menjadi Response agar caller (.json()/.text()/.body) tetap jalan.
+// Ini membuat endpoint publik/ngrok bekerja TANPA ekstensi & TANPA user harus
+// mengaktifkan ACPNT/CORS di tunnel-nya; lokal tetap lewat jalur langsung (cepat).
+const PROXY_PATH = '/api/proxy';
+
+function headersToPairs(headers) {
+  const out = [];
+  if (!headers) return out;
+  try { headers.forEach((v, k) => out.push([k, v])); } catch {}
+  return out;
+}
+
+async function proxyFetch(targetUrl, init = {}) {
+  const params = new URLSearchParams();
+  params.set('url', targetUrl);
+  if (init.method) params.set('method', init.method);
+  if (init.headers && Object.keys(init.headers).length) {
+    params.set('headers', JSON.stringify(headersToPairs(init.headers)));
+  }
+  if (init.body != null) params.set('body', typeof init.body === 'string' ? init.body : JSON.stringify(init.body));
+  const res = await fetch(`${PROXY_PATH}?${params}`, { method: 'GET', headers: { accept: 'application/json' } });
+  if (!res.ok) throw { type: 'network', message: 'Proksi endpoint gagal memanggil target.' };
+  let env; try { env = await res.json(); } catch { env = {}; }
+  const bodyText = env.body != null ? env.body : '';
+  return new Response(bodyText, {
+    status: env.status || (env.ok ? 200 : 0),
+    statusText: env.ok ? 'OK' : 'Proxy',
+    headers: { 'content-type': 'application/json; charset=utf-8' },
+  });
+}
+
+// Fetch provider: coba langsung; bila gagal (PNA/CORS untuk endpoint remote)
+// → fallback ke /api/proxy. Lokal (same-network) lewat jalur langsung.
+export async function providerFetch(targetUrl, init = {}) {
+  try {
+    const res = await fetch(targetUrl, init);
+    return res;
+  } catch {
+    return proxyFetch(targetUrl, init);
+  }
+}
+
 // Registry bawaan KOSONG — provider hanya ada bila user menambahkannya
 // via probeEndpoint (onboarding / drawer Pengaturan).
 export const PROVIDERS = {};
@@ -132,7 +185,7 @@ export async function probeEndpoint(baseUrl, apiKey = '') {
   for (const modelsPath of candidates) {
     let res;
     try {
-      res = await fetch(`${base}${modelsPath}`, { headers: authHeader(apiKey) });
+      res = await providerFetch(`${base}${modelsPath}`, { headers: authHeader(apiKey) });
     } catch {
       // Browser melempar TypeError tanpa detail saat: offline, URL salah,
       // ATAU respons diblokir CORS (server tidak mengirim
@@ -252,7 +305,7 @@ export async function listModels(apiKey, provider) {
   }
   let res;
   try {
-    res = await fetch(`${provider.baseUrl}${provider.modelsPath}`, { headers: authHeader(apiKey) });
+    res = await providerFetch(`${provider.baseUrl}${provider.modelsPath}`, { headers: authHeader(apiKey) });
   } catch {
     // fetch melempar saat offline / jaringan terputus → error network.
     throw { ...mapApiError(0) };
@@ -352,7 +405,7 @@ export async function chatCompletion({
       if (!fb) break;
       cur = fb;
       try {
-        res = await fetch(`${provider.baseUrl}${provider.chatPath}`, {
+        res = await providerFetch(`${provider.baseUrl}${provider.chatPath}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(apiKey) },
           body: JSON.stringify(cur), signal,
         });
@@ -448,7 +501,7 @@ export async function readSSE(res, onDelta, signal) {
 // Bangun & kirim POST chat; tambahkan tools grounding bila diminta + didukung.
 async function buildChatRequest(provider, apiKey, body, grounding, signal) {
   if (grounding && provider.supportsGrounding) body.tools = [{ type: 'function', function: { name: 'google_search', description: 'web grounding' } }];
-  return fetch(`${provider.baseUrl}${provider.chatPath}`, {
+  return providerFetch(`${provider.baseUrl}${provider.chatPath}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeader(apiKey) },
     body: JSON.stringify(body),
