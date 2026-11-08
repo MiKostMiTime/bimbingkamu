@@ -24,6 +24,13 @@ import { mapApiError, extractSources } from './api.js';
 // mengaktifkan ACPNT/CORS di tunnel-nya; lokal tetap lewat jalur langsung (cepat).
 const PROXY_PATH = '/api/proxy';
 
+// Timeout internal untuk jalur langsung providerFetch (~12 detik). Bila fetch
+// LANGSUNG ke endpoint publik (ngrok) TIDAK membalas dalam batas ini — pola
+// hang PNA/CORS + service worker aktif di mobile Chromium — kita batakan lalu
+// fallback ke /api/proxy. Lokal (same-network) biasanya merespons jauh lebih
+// cepat, jadi tak pernah menyentuh batas ini.
+const DIRECT_TIMEOUT_MS = 12000;
+
 function headersToPairs(headers) {
   const out = [];
   if (!headers) return out;
@@ -50,14 +57,51 @@ async function proxyFetch(targetUrl, init = {}) {
   });
 }
 
-// Fetch provider: coba langsung; bila gagal (PNA/CORS untuk endpoint remote)
-// → fallback ke /api/proxy. Lokal (same-network) lewat jalur langsung.
+// Fetch provider: coba langsung; bila TIDAK sukses → fallback ke /api/proxy.
+// Lokal (same-network) lewat jalur langsung (cepat). Dua pemici fallback:
+//   1. THROW: fetch melempar TypeError (PNA/CORS untuk endpoint remote). Ini
+//      yang terjadi di Safari/desktop → fallback jalan.
+//   2. HANG / OPAQUE: mobile Chromium di bawah PNA/CORS + service worker aktif
+//      kadang TIDAK melempar error — hanya menggantung (>12s) atau mengembalikan
+//      Response "opaque" (status 0 / type 'opaque'). Tanpa deteksi ini, fallback
+//      tak pernah terpicu → UI stuck spinner. Timeout internal + pemeriksaan
+//      status/opaque menangkap kedua pola ini.
+// init.signal pemanggil (tombol Berhenti chat) tetap hormati: langsung dipakai
+// untuk jalur proksi, dan dicerminkan ke controller timeout jalur langsung.
 export async function providerFetch(targetUrl, init = {}) {
+  const callerSignal = init.signal || null;
+
+  // Controller internal jalur langsung: gabungan timer timeout + cermin
+  // pembatalan pemanggil (tombol Berhenti). Jalur proksi memakai
+  // callerSignal asli tombol Berhenti tetap bekerja di dalam proksi.
+  const acDirect = new AbortController();
+  let timer = setTimeout(() => acDirect.abort(), DIRECT_TIMEOUT_MS);
+
+  function onCallerAbort() {
+    if (!acDirect.signal.aborted) acDirect.abort();
+  }
+  if (callerSignal) {
+    if (callerSignal.aborted) acDirect.abort();
+    else callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+  }
+
   try {
-    const res = await fetch(targetUrl, init);
+    let res;
+    try {
+      // Jalur langsung: hormati timeout + tombol Berhenti pemanggil.
+      res = await fetch(targetUrl, { ...init, signal: acDirect.signal });
+    } catch {
+      // Hang / PNA/CORS → fallback proksi (bebas CORS + PNA dari sisi server).
+      return proxyFetch(targetUrl, init);
+    }
+    // Mobile Chromium: respons opaque (status 0) tanpa lempar error → fallback.
+    if (res.type === 'opaque' || res.status === 0) {
+      return proxyFetch(targetUrl, init);
+    }
     return res;
-  } catch {
-    return proxyFetch(targetUrl, init);
+  } finally {
+    clearTimeout(timer);
+    if (callerSignal) callerSignal.removeEventListener('abort', onCallerAbort);
   }
 }
 
