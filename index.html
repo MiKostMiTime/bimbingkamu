@@ -205,14 +205,30 @@
             aria-controls="setupGuideBody"
           >
             <svg class="setup-guide__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18 15 12 9 6"/></svg>
-            <span class="setup-guide__label">Panduan: HP, cloud, dan LM Studio lokal</span>
+            <span class="setup-guide__label">Panduan: Cloud, Mobile, dan LM Studio lokal</span>
           </button>
           <div id="setupGuideBody" class="setup-guide__body" hidden>
+            <!-- CLOUD: default, tanpa setup -->
+            <article class="setup-card setup-card--cloud">
+              <div class="setup-card__head">
+                <h3 class="setup-card__title"><span class="setup-card__emoji" aria-hidden="true">☁️</span> Cloud</h3>
+                <span class="setup-badge setup-badge--accent">Rekomendasi</span>
+              </div>
+              <p class="setup-card__text">
+                Cloud = provider siap di internet. Tinggal pilih, isi kunci API, langsung belajar.
+                Cocok yang ingin cepat &amp; stabil Namun butuh koneksi internet dan sebagian model berbayar.
+              </p>
+              <ol class="setup-list">
+                <li>Pilih <strong>OpenRouter</strong>, <strong>Gemini AI Studio</strong>, atau <strong>OpenAI</strong> di dropdown “Endpoint aktif”.</li>
+                <li>Klik <strong>Sunting</strong> pada endpoint → isi <strong>Kunci API</strong> (ambil di website provider) → <strong>Simpan perubahan</strong>.</li>
+                <li>Pilih model → mulai belajar!</li>
+              </ol>
+            </article>
             <!-- MOBILE: tanpa ekstensi, lewat tunnel HTTPS -->
             <article class="setup-card setup-card--mobile">
               <div class="setup-card__head">
-                <h3 class="setup-card__title"><span class="setup-card__emoji" aria-hidden="true">📱</span> HP / tablet</h3>
-                <span class="setup-badge setup-badge--accent">tanpa ekstensi</span>
+                <h3 class="setup-card__title"><span class="setup-card__emoji" aria-hidden="true">📱</span> Mobile</h3>
+                <span class="setup-badge setup-badge--accent">Tanpa ekstensi</span>
               </div>
               <p class="setup-card__text">
                 Chrome di Android dan Safari di iPhone tidak bisa memasang ekstensi. Selain itu
@@ -233,27 +249,11 @@
                 pakai opsi <strong>Cloud</strong> di HP.
               </p>
             </article>
-            <!-- CLOUD: default, tanpa setup -->
-            <article class="setup-card setup-card--cloud">
-              <div class="setup-card__head">
-                <h3 class="setup-card__title"><span class="setup-card__emoji" aria-hidden="true">☁️</span> Cloud</h3>
-                <span class="setup-badge setup-badge--accent">rekomendasi</span>
-              </div>
-              <p class="setup-card__text">
-                Cloud = provider siap di internet. Tinggal pilih, isi kunci API, langsung belajar.
-                Cocok yang ingin cepat &amp; stabil (butuh koneksi internet; sebagian berbayar).
-              </p>
-              <ol class="setup-list">
-                <li>Pilih <strong>OpenRouter</strong>, <strong>Gemini AI Studio</strong>, atau <strong>OpenAI</strong> di dropdown “Endpoint aktif”.</li>
-                <li>Klik <strong>Sunting</strong> pada endpoint → isi <strong>Kunci API</strong> (ambil di website provider) → <strong>Simpan perubahan</strong>.</li>
-                <li>Pilih model → mulai belajar!</li>
-              </ol>
-            </article>
             <!-- LOCAL: LM Studio via ekstensi Chrome (tanpa CORS) -->
             <article class="setup-card">
               <div class="setup-card__head">
                 <h3 class="setup-card__title"><span class="setup-card__emoji" aria-hidden="true">🖥️</span> Local LM Studio</h3>
-                <span class="setup-badge">desktop</span>
+                <span class="setup-badge">Desktop</span>
               </div>
               <p class="setup-card__text">
                 LM Studio berjalan di komputermu, gratis, tanpa internet. Karena BimbingKamu dibuka
