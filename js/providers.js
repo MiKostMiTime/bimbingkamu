@@ -56,7 +56,7 @@ function withTunnelHeaders(targetUrl, headers) {
 // hang PNA/CORS + service worker aktif di mobile Chromium — kita batakan lalu
 // fallback ke /api/proxy. Lokal (same-network) biasanya merespons jauh lebih
 // cepat, jadi tak pernah menyentuh batas ini.
-const DIRECT_TIMEOUT_MS = 12000;
+const DEFAULT_DIRECT_TIMEOUT_MS = 12000;
 
 // ===== DIAGNOSTIK FETCH (PNA/CORS) =====
 // Catat setiap keputusan providerFetch ke localStorage agar bisa dibaca ulang
@@ -136,12 +136,14 @@ async function proxyFetch(targetUrl, init = {}) {
 //                  (di sini fetch bisa tetap "hidup" walau sudah dibatalkan).
 // init.signal pemanggil (tombol Berhenti) tetap hormati: dicerminkan ke timer
 // dan dipakai juga di jalur proksi.
-export async function providerFetch(targetUrl, init = {}) {
+export async function providerFetch(targetUrl, init = {}, opts = {}) {
   // Base URL lama yang tersimpan tanpa skema harus tetap bisa dipakai; tanpa
   // ini fetch memperlakukannya sebagai path relatif ke aplikasi.
   if (typeof targetUrl === 'string') targetUrl = normalizeEndpointUrl(targetUrl);
   const callerSignal = init.signal || null;
   const acDirect = new AbortController();
+  // Timeout jalur langsung bisa diganti per-panggilan (utk uji); default 12s.
+  const DIRECT_TIMEOUT_MS = opts.timeoutMs ?? DEFAULT_DIRECT_TIMEOUT_MS;
 
   // Cermin pembatalan pemanggil (tombol Berhenti) ke controller langsung.
   function onCallerAbort() {
@@ -158,6 +160,21 @@ export async function providerFetch(targetUrl, init = {}) {
     clearTimeout(timer);
     if (callerSignal) callerSignal.removeEventListener('abort', onCallerAbort);
   };
+
+  // RACE TANPA undefined: pemenang mencatat Response final ke winnerGate SETELAH
+  // nilai siap, sehingga cabang yang kalah (settled===true) menunggu gate →
+  // Promise.race TIDAK PERNAK mengembalikan undefined (fix: .ok pada undefined).
+  let resolveWinner = () => {};
+  const winnerGate = new Promise((resolve) => { resolveWinner = resolve; });
+
+  // Tandai pemenang PERTAMA: jalankan cleanup + hentikan fetch latar belakang.
+  function markWon() {
+    if (settled) return false;
+    settled = true;
+    cleanup();
+    acDirect.abort();
+    return true;
+  }
 
   // Fallback proksi — jalur andal untuk endpoint remote (bebas CORS + PNA).
   async function toProxy() {
@@ -185,30 +202,39 @@ export async function providerFetch(targetUrl, init = {}) {
   };
   const direct = fetch(targetUrl, directInit)
     .then(async (res) => {
-      if (settled) return;
+      if (settled) return winnerGate; // kalah: tunggu pemenang mencatat result
       if (res.type === 'opaque' || res.status === 0) {
         logFetch('opaque', `status=${res.status} type=${res.type}`);
-        settled = true; cleanup(); return toProxy();
+        markWon();                       // menang → proksi (latar dibatalkan)
+        const proxyRes = await toProxy();
+        resolveWinner(proxyRes);         // buka gate → tak pernah undefined
+        return proxyRes;
       }
       logFetch('direct-ok', `status=${res.status} type=${res.type} ok=${res.ok}`);
-      settled = true; cleanup(); return res;
+      markWon();                         // menang
+      resolveWinner(res);                // buka gate → tak pernah undefined
+      return res;
     })
     .catch(async () => {
-      if (settled) return;
+      if (settled) return winnerGate;    // kalah: tunggu pemenang mencatat result
       logFetch('direct-threw', 'fetch LANGSUNG mempar error → proksi');
-      settled = true; cleanup(); return toProxy();
+      markWon();                         // menang → proksi
+      const proxyRes = await toProxy();
+      resolveWinner(proxyRes);           // buka gate → tak pernah undefined
+      return proxyRes;
     });
 
   // Timer: bila langsung belum selesai ~12s → proksi SEGERA (tanpa menunggu
   // fetch langsung reject). Race menang yang lebih dulu settle.
-  const timedFallback = new Promise((resolve) => {
+  const timedFallback = new Promise((resolve, reject) => {
     timer = setTimeout(async () => {
-      if (settled) return;
+      if (settled) return winnerGate; // kalah: pemenang lain sudah menang
       logFetch('timeout', `langsung >${DIRECT_TIMEOUT_MS}ms → proksi`);
-      settled = true;
-      acDirect.abort(); // hentikan fetch latar belakang
-      cleanup();
-      try { resolve(await toProxy()); } catch (e) { resolve(Promise.reject(e)); }
+      markWon();                       // menang → hentikan fetch latar
+      let v;
+      try { v = await toProxy(); } catch (e) { reject(e); return; }
+      resolveWinner(v);                // buka gate → yang kalah dapat v
+      resolve(v);
     }, DIRECT_TIMEOUT_MS);
   });
 
