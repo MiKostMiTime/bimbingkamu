@@ -698,6 +698,73 @@
   background-position: right 12px center;
 }
 
+/* ===== MODEL SEARCH (filter dropdown model) ===== */
+/* Wrapper input filter + tombol clear, diletakkan di ATAS <select>. Select
+   tetap native (pakai chevron + styling .select); hanya <option> yang
+   disembunyikan/ditampilkan lewat atribut hidden. */
+.model-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.model-search__input {
+  width: 100%;
+  height: 36px;
+  padding-right: 40px; /* ruang untuk tombol clear di dalam input */
+}
+
+/* Tombol ghost bulat-pojok untuk menghapus pencarian, menimpa ujung input. */
+.model-search__clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.model-search__clear:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+
+.model-search__clear:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.model-search__clear svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Badge jumlah hasil di tepi kanan label field. */
+.model-search__count {
+  display: inline-block;
+  flex: none;
+  margin-left: var(--space-2);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
 /* ===== SEGMENTED CONTROL ===== */
 .segmented {
   display: grid;

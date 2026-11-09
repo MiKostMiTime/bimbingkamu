@@ -5,6 +5,7 @@
 import { storage } from './storage.js';
 import { getModeLabel, getLevelLabel } from './config.js';
 import { buildStudyCard, injectCardStyles, loadHtml2canvas } from './card.js';
+import { attachModelSearch } from './model-search.js';
 
 // ===== IKON (inline SVG) =====
 const ICONS = {
@@ -264,6 +265,8 @@ export function showOnboarding({ onComplete, onSkip, onConnect, onModel }) {
         const sel = body.querySelector('#onboardModel');
         wrap.style.display = '';
         sel.innerHTML = models.map((id) => `<option value="${id}">${id}</option>`).join('');
+        // Filter pencarian manual untuk dropdown model onboarding.
+        attachModelSearch(sel);
         connected = true;
         status.textContent = `Terhubung. ${models.length} model tersedia.`;
       } catch (err) {

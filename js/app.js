@@ -5,6 +5,7 @@
 import { STORAGE_KEYS, getLevelLabel, migrateLegacyProviderSettings } from './config.js';
 import { estimateCost, formatCostIDR, fetchUsdIdr, effectiveUsdIdr, cachedUsdIdr } from './pricing.js';
 import { storage } from './storage.js';
+import { attachModelSearch } from './model-search.js';
 import { resolveProviders, listModels, providerChat, probeEndpoint, fetchContextLimit, fetchModelPricing, resolveApiKey, addProvider, updateProvider, removeProvider, nextActiveAfterDelete, DEFAULT_PROVIDERS } from './providers.js';
 import { needsSummarize, splitForSummary, summarySystemPrompt, summaryMessage, buildContentsFrom } from './summarize.js';
 import { retrieveWithScores, joinScoredChunks } from './rag.js';
@@ -288,6 +289,13 @@ async function refreshProviderModelList() {
   if (!state.settings.provider) return;
   const provider = currentProviders()[state.settings.provider];
   if (!provider) return;
+  // Reset + simpan API pencarian manual SETIAP daftar model disegarkan (switch
+  // / tambah / hapus endpoint). Dijalankan lebih dulu dari listModels agar switch
+  // endpoint SELALU mulai dari pencarian kosong — meski listModel di bawah
+  // gagal/throw, filter tetap bersih (kunci: search berlaku untuk SETIAP
+  // endpoint, bukan hanya yang pemuatan sukses).
+  const searchApi = attachModelSearch(dom.model);
+  searchApi.reset();
   togglePanelLoading('panelProvider', true);
   try {
     const ids = await listModels(activeApiKey(), provider);
@@ -301,6 +309,9 @@ async function refreshProviderModelList() {
     dom.model.value = ids.includes(state.settings.model) ? state.settings.model : ids[0];
     state.settings.model = dom.model.value;
     persistSettings();
+    // Re-terapkan query ke opsi BARU (rebuild mengganti seluruh <option>), agar
+    // ketik sebelum fetch selesai tetap menyaring model baru.
+    searchApi.apply(searchApi.input.value);
     updateConnStatus('ok');
     // Context limit (opsional — hanya LM Studio yang melaporkannya).
     fetchContextLimit(provider, activeApiKey(), state.settings.model).then((n) => {
