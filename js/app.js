@@ -449,8 +449,8 @@ function openEndpointModal(id) {
     showClose: false,
     body: `
       <div class="field">
-        <label class="field__label" for="epEditUrl">Base URL</label>
-        <input id="epEditUrl" class="input" type="text" value="${escapeAttr(isEdit ? p.baseUrl : '')}" placeholder="Silahkan masukkan URL" autocomplete="off" spellcheck="false" />
+        <label class="field__label" for="epEditUrl">Silahkan masukan URL</label>
+        <input id="epEditUrl" class="input" type="text" value="${escapeAttr(isEdit ? p.baseUrl : '')}" placeholder="http://127.0.0.1:1234" autocomplete="off" spellcheck="false" />
       </div>
       <div class="field">
         <label class="field__label" for="epEditName">Nama endpoint (opsional)</label>

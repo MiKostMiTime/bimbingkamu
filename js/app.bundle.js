@@ -188,8 +188,8 @@ ${e}`}}function et(e){return e.filter(t=>t.role==="user"||t.role==="model").map(
         </div>
       </li>`}).join("")}function Zn(e){let t=!!e,n=t?q()[e]:null;if(t&&!n)return;let a=Be({title:t?"Sunting endpoint":"Tambah endpoint",showClose:!1,body:`
       <div class="field">
-        <label class="field__label" for="epEditUrl">Base URL</label>
-        <input id="epEditUrl" class="input" type="text" value="${ee(t?n.baseUrl:"")}" placeholder="Silahkan masukkan URL" autocomplete="off" spellcheck="false" />
+        <label class="field__label" for="epEditUrl">Silahkan masukan URL</label>
+        <input id="epEditUrl" class="input" type="text" value="${ee(t?n.baseUrl:"")}" placeholder="http://127.0.0.1:1234" autocomplete="off" spellcheck="false" />
       </div>
       <div class="field">
         <label class="field__label" for="epEditName">Nama endpoint (opsional)</label>
