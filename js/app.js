@@ -449,12 +449,12 @@ function openEndpointModal(id) {
     showClose: false,
     body: `
       <div class="field">
-        <label class="field__label" for="epEditUrl">Silahkan masukan URL</label>
+        <label class="field__label" for="epEditUrl">Silakan masukan URL</label>
         <input id="epEditUrl" class="input" type="text" value="${escapeAttr(isEdit ? p.baseUrl : '')}" placeholder="http://127.0.0.1:1234" autocomplete="off" spellcheck="false" />
       </div>
       <div class="field">
-        <label class="field__label" for="epEditName">Nama endpoint (opsional)</label>
-        <input id="epEditName" class="input" type="text" value="${escapeAttr(isEdit ? p.name : '')}" autocomplete="off" spellcheck="false" />
+        <label class="field__label" for="epEditName">Nama Endpoint</label>
+        <input id="epEditName" class="input" type="text" value="${escapeAttr(isEdit ? p.name : '')}" placeholder="Silakan masukan nama endpoint" required autocomplete="off" spellcheck="false" />
       </div>
       <div class="field">
         <label class="field__label" for="epEditKey">Kunci API</label>
@@ -499,6 +499,10 @@ function openEndpointModal(id) {
     const key = editModal.querySelector('#epEditKey').value.trim();
     if (!baseUrl) {
       showToast('Masukkan URL endpoint dulu.', 'error');
+      return;
+    }
+    if (!name) {
+      showToast('Masukkan nama endpoint dulu.', 'error');
       return;
     }
     try {
