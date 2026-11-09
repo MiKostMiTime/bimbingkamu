@@ -145,9 +145,9 @@ const state = {
   busy: false,
 };
 
-// ===== GENERASI (abort / Berhendi) =====
+// ===== GENERASI (abort / Berhenti) =====
 // Controller + flag untuk menghentikan generasi model di tengah jalan (tombol
-// "Berhendi"). abortCtl di-thread ke providerChat → fetch (signal), sehingga
+// "Berhenti"). abortCtl di-thread ke providerChat → fetch (signal), sehingga
 // berhenti SEBENARNYA (bukan hanya melewati animasi). readSSE mengembalikan
 // teks parsial saat abort, jadi jawaban setengah jalan tetap tersimpan.
 let abortCtl = null;
@@ -157,7 +157,7 @@ function stopGeneration() {
   if (abortCtl) abortCtl.abort();
 }
 
-// Benarkah error ini hasil hentian user (tombol "Berhendi")? Ya bila user sudah
+// Benarkah error ini hasil hentian user (tombol "Berhenti")? Ya bila user sudah
 // menekan (flag userStopped) ATAU fetch melempar AbortError. Error sistem
 // (network/server/badrequest) BUKAN hentian user → tampilkan tombol "Coba lagi".
 export function isUserStop(err, stopped = userStopped) {
@@ -1264,7 +1264,7 @@ async function sendUserMessage(rawText, opts = {}) {
         showEmptyState();
       }
     } else if (stop) {
-      // User menekan Berhendi → simpan parsial, jangan buang balasan.
+      // User menekan Berhenti → simpan parsial, jangan buang balasan.
       showToast('Balasan dihentikan.', 'info');
     }
     // Tombol "Coba lagi" HANYA untuk error SISTEM (bukan hentian user).
@@ -1703,10 +1703,10 @@ function updateStats() {
   renderTokenStat();
 }
 
-// Reducer murni: tombol kirim ↔ Berhendi. Saat busy → "Berhendi" (aktif, untuk
+// Reducer murni: tombol kirim ↔ Berhenti. Saat busy → "Berhenti" (aktif, untuk
 // berhenti); saat idle → "Kirim" (nyala bila ada teks, mati bila kosong).
 export function composerButtonState(busy, hasText) {
-  return busy ? { label: 'Berhendi', disabled: false } : { label: 'Kirim', disabled: !hasText };
+  return busy ? { label: 'Berhenti', disabled: false } : { label: 'Kirim', disabled: !hasText };
 }
 
 function updateComposer() {
