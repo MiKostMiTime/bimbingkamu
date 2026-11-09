@@ -12,7 +12,7 @@ const MESSAGES = {
   payment: 'Kredit atau metode pembayaran endpoint belum diatur (mis. OpenRouter butuh kredit). Tambahkan kredit / billing di settings provider, lalu pilih model dan coba lagi.',
   lmstudioToken: 'LM Studio ini mewajibkan token. Buka LM Studio → Developer → Server Settings → Manage Tokens, buat token baru, lalu tempel di kolom Kunci API endpoint ini.',
   quota: 'Kuota/rate limit endpoint tercapai. Coba lagi beberapa saat.',
-  network: 'Tidak bisa terhubung ke endpoint. Periksa koneksi & URL — bila endpoint lokal (LM Studio/Ollama), aktifkan "Enable CORS" di pengaturan server-nya.',
+  network: 'Tidak bisa terhubung ke endpoint. Periksa koneksi & URL. Untuk endpoint lokal (LM Studio/Ollama), aktifkan CORS di server. Untuk tunnel (ngrok/localtunnel), pastikan tunnel masih aktif.',
   model: 'Model ini tidak tersedia di endpoint. Coba pilih model lain dari daftar.',
   server: 'Endpoint sedang sibuk. Coba lagi beberapa saat.',
   unknown: 'Terjadi kesalahan tak terduga. Coba lagi beberapa saat.',

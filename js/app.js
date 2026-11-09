@@ -343,22 +343,25 @@ function renderProviderOptions() {
 // opsional) → pilih otomatis → ambil daftar model. Return daftar id model
 // (dipakai onboarding). Throw error ramah bila endpoint tak merespons.
 async function connectEndpoint({ baseUrl, name, key, providerId }) {
-  let modelsPath, chatPath;
+  let modelsPath, chatPath, resolvedBaseUrl;
   togglePanelLoading('panelProvider', true);
   try {
-    ({ modelsPath, chatPath } = await probeEndpoint(baseUrl, key));
+    const probe = await probeEndpoint(baseUrl, key);
+    modelsPath = probe.modelsPath;
+    chatPath = probe.chatPath;
+    resolvedBaseUrl = probe.baseUrl;
   } finally {
     togglePanelLoading('panelProvider', false);
   }
-  const host = baseUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  const host = resolvedBaseUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
   // Mode edit: pakai id endpoint lama; mode tambah: buat id baru.
   const id = providerId || 'ep-' + Math.random().toString(36).slice(2, 7);
   // Pertahankan kapabilitas seed (Gemini grounding, thinking) saat disunting.
   const existing = providerId ? currentProviders()[providerId] : null;
   const provider = {
     id,
-    name: name || (existing && existing.name) || host || baseUrl,
-    baseUrl: baseUrl.trim().replace(/\/+$/, ''),
+    name: name || (existing && existing.name) || host || resolvedBaseUrl,
+    baseUrl: resolvedBaseUrl,
     modelsPath,
     chatPath,
     key: key || '',
@@ -1161,7 +1164,7 @@ async function sendUserMessage(rawText, opts = {}) {
   // Tangkap index user yang baru pushed; bubble hasil ketik langsung diberi
   // tombol "Sunting" (hanya ini yang bisa disunting — restore riwayat tetap plain).
   const editIdx = state.messages.length - 1;
-  buildUserBubble(editIdx);
+  const userEl = buildUserBubble(editIdx);
   if (fromInput) {
     dom.input.value = '';
     autosizeInput();

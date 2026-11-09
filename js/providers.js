@@ -24,6 +24,33 @@ import { mapApiError, extractSources } from './api.js';
 // mengaktifkan ACPNT/CORS di tunnel-nya; lokal tetap lewat jalur langsung (cepat).
 const PROXY_PATH = '/api/proxy';
 
+// ===== TUNNEL PUBLIK (ngrok/localtunnel) =====
+// Tunnel gratis menampilkan halaman peringatan HTML kepada permintaan yang
+// datang dari browser. Halaman itu TIDAK membawa header CORS, sehingga fetch
+// gagal (net::ERR_FAILED / TypeError) walau endpoint di baliknya sehat dan
+// header CORS-nya benar. Tunnel menyediakan header khusus untuk melewati
+// halaman itu; kirim hanya ke host tunnel agar endpoint biasa tidak terkena
+// preflight tambahan.
+const NGROK_HOST_RE = /(^|\.)ngrok(-free)?\.(app|dev|io|pizza|pro|page)$/i;
+const LOCALTUNNEL_HOST_RE = /(^|\.)loca\.lt$/i;
+
+function tunnelBypassHeaders(targetUrl) {
+  try {
+    const host = new URL(targetUrl).hostname.toLowerCase();
+    if (NGROK_HOST_RE.test(host)) return { 'ngrok-skip-browser-warning': 'bimbingkamu' };
+    if (LOCALTUNNEL_HOST_RE.test(host)) return { 'bypass-tunnel-reminder': 'bimbingkamu' };
+  } catch {}
+  return {};
+}
+
+function withTunnelHeaders(targetUrl, headers) {
+  const extra = tunnelBypassHeaders(targetUrl);
+  if (!Object.keys(extra).length) return headers;
+  const merged = new Headers(headers || {});
+  for (const [k, v] of Object.entries(extra)) merged.set(k, v);
+  return merged;
+}
+
 // Timeout internal untuk jalur langsung providerFetch (~12 detik). Bila fetch
 // LANGSUNG ke endpoint publik (ngrok) TIDAK membalas dalam batas ini — pola
 // hang PNA/CORS + service worker aktif di mobile Chromium — kita batakan lalu
@@ -52,19 +79,42 @@ function logFetch(kind, detail = '') {
 function headersToPairs(headers) {
   const out = [];
   if (!headers) return out;
-  try { headers.forEach((v, k) => out.push([k, v])); } catch {}
+  if (typeof Headers !== 'undefined' && headers instanceof Headers) {
+    headers.forEach((v, k) => out.push([k, v]));
+  } else if (Array.isArray(headers)) {
+    for (const pair of headers) {
+      if (Array.isArray(pair) && pair.length >= 2) out.push([String(pair[0]), String(pair[1])]);
+    }
+  } else if (typeof headers.forEach === 'function') {
+    headers.forEach((v, k) => out.push([k, v]));
+  } else if (typeof headers === 'object') {
+    // Header dari providers.js berupa objek biasa ({ 'Content-Type': ...,
+    // Authorization: ... }); dulu objek ini jatuh ke forEach yang tidak ada →
+    // header hilang saat lewat proksi (endpoint membalas 415/401).
+    for (const k of Object.keys(headers)) out.push([k, String(headers[k])]);
+  }
   return out;
 }
 
 async function proxyFetch(targetUrl, init = {}) {
-  const params = new URLSearchParams();
-  params.set('url', targetUrl);
-  if (init.method) params.set('method', init.method);
-  if (init.headers && Object.keys(init.headers).length) {
-    params.set('headers', JSON.stringify(headersToPairs(init.headers)));
+  const headers = withTunnelHeaders(targetUrl, init.headers);
+  const envelope = {
+    url: targetUrl,
+    method: init.method || 'GET',
+    headers: headersToPairs(headers),
+  };
+  if (init.body != null) {
+    envelope.body = typeof init.body === 'string' ? init.body : JSON.stringify(init.body);
   }
-  if (init.body != null) params.set('body', typeof init.body === 'string' ? init.body : JSON.stringify(init.body));
-  const res = await fetch(`${PROXY_PATH}?${params}`, { method: 'GET', headers: { accept: 'application/json' } });
+  // POST ke proksi same-origin: body chat + materi bisa puluhan KB dan TIDAK
+  // muat di query string GET (Vercel membalas 414). Server /api/proxy membaca
+  // envelope JSON ini dari body request.
+  const res = await fetch(PROXY_PATH, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(envelope),
+    signal: init.signal,
+  });
   if (!res.ok) throw { type: 'network', message: 'Proksi endpoint gagal memanggil target.' };
   let env; try { env = await res.json(); } catch { env = {}; }
   const bodyText = env.body != null ? env.body : '';
@@ -87,6 +137,9 @@ async function proxyFetch(targetUrl, init = {}) {
 // init.signal pemanggil (tombol Berhenti) tetap hormati: dicerminkan ke timer
 // dan dipakai juga di jalur proksi.
 export async function providerFetch(targetUrl, init = {}) {
+  // Base URL lama yang tersimpan tanpa skema harus tetap bisa dipakai; tanpa
+  // ini fetch memperlakukannya sebagai path relatif ke aplikasi.
+  if (typeof targetUrl === 'string') targetUrl = normalizeEndpointUrl(targetUrl);
   const callerSignal = init.signal || null;
   const acDirect = new AbortController();
 
@@ -122,7 +175,15 @@ export async function providerFetch(targetUrl, init = {}) {
 
   // Jalur langsung: menang bila selesai lebih dulu dari timer. Bila opaque /
   // status 0 / mempar error → proksi (hanya bila timer belum menang).
-  const direct = fetch(targetUrl, { ...init, signal: acDirect.signal })
+  // Header bypass tunnel (ngrok/localtunnel) membuat jalur langsung tetap
+  // berfungsi di mobile: tanpa header ini browser menerima halaman peringatan
+  // HTML tanpa CORS dan fetch selalu gagal sebelum sempat ke proksi.
+  const directInit = {
+    ...init,
+    signal: acDirect.signal,
+    headers: withTunnelHeaders(targetUrl, init.headers),
+  };
+  const direct = fetch(targetUrl, directInit)
     .then(async (res) => {
       if (settled) return;
       if (res.type === 'opaque' || res.status === 0) {
@@ -213,7 +274,7 @@ export function resolveProviders(custom = []) {
       delete all[p.id];
       continue;
     }
-    if (p.baseUrl) all[p.id] = { ...p, custom: true };
+    if (p.baseUrl) all[p.id] = { ...p, baseUrl: normalizeEndpointUrl(p.baseUrl), custom: true };
   }
   return all;
 }
@@ -263,60 +324,159 @@ function authHeader(apiKey) {
   return { Authorization: `Bearer ${apiKey}` };
 }
 
+// ===== NORMALISASI BASE URL =====
+// User sering menempel domain tanpa skema (mis. "api.electronhub.ai/v1").
+// fetch() memperlakukan string seperti itu sebagai path RELATIF ke aplikasi —
+// bukan host tujuan — sehingga probe/chat gagal walau endpoint sehat. Tambahkan
+// skema: host lokal/LAN → http, host publik → https.
+export function normalizeEndpointUrl(baseUrl) {
+  let base = String(baseUrl || '').trim();
+  if (!base) return '';
+  if (base.startsWith('//')) base = `https:${base}`;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(base)) {
+    // Path relatif (diawali satu "/") bukan base URL endpoint; biarkan apa
+    // adanya agar fetch gagal dengan pesan yang jelas, bukan diubah jadi host.
+    if (/^\/(?!\/)/.test(base)) return base.replace(/\/+$/, '');
+    const authority = base.split('/')[0];
+    const host = authority
+      .replace(/^\[([^\]]+)\](?::\d+)?$/, '[$1]')
+      .replace(/:\d+$/, '')
+      .toLowerCase();
+    const isLocal =
+      host === 'localhost' || host === '[::1]' || host === '::1' ||
+      host === 'host.docker.internal' || host.endsWith('.local') ||
+      /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(host) || /^169\.254\./.test(host) ||
+      /^[a-z0-9-]+$/i.test(host);
+    base = `${isLocal ? 'http' : 'https'}://${base}`;
+  }
+  return base.replace(/\/+$/, '');
+}
+
+// Halaman aplikasi/dashboard (app.*, www.*) sering bukan API. Untuk pola
+// pemisahan yang umum ini, API biasanya ada di api.<domain>. Hanya dipakai
+// saat URL yang dimasukkan benar-benar membalas HTML (bukan API), dan hanya
+// root host yang dicoba agar path dashboard tidak ikut terbawa.
+function apiHostVariant(base) {
+  try {
+    const u = new URL(base);
+    if (!/^(app|www)\./i.test(u.hostname)) return null;
+    u.hostname = u.hostname.replace(/^[^.]+\./, 'api.');
+    u.pathname = '/';
+    u.search = '';
+    u.hash = '';
+    return u.toString().replace(/\/+$/, '');
+  } catch {
+    return null;
+  }
+}
+
+// Deteksi respons HTML tanpa bergantung pada Content-Type: proksi same-origin
+// membungkus semua respons sebagai application/json, jadi body ikut diperiksa.
+function looksLikeHtml(res, text) {
+  try {
+    const ct = res.headers && typeof res.headers.get === 'function' ? res.headers.get('content-type') : '';
+    if (/text\/html/i.test(ct || '')) return true;
+  } catch {}
+  return /^\s*<(?:!doctype\s+html|html|head|body)(?:\s|>)/i.test(String(text || '').slice(0, 240));
+}
+
+function htmlPageError(base) {
+  const alt = apiHostVariant(base);
+  const hint = alt
+    ? ` Coba base URL API: ${alt}.`
+    : ' Gunakan base URL API dari penyedianya (biasanya berakhiran /v1), bukan alamat aplikasi/dashboard.';
+  return {
+    type: 'badrequest',
+    message: `URL ini membuka halaman web (HTML), bukan API model.${hint}`,
+  };
+}
+
 // ===== PROBE ENDPOINT (baru) =====
 // Verifikasi Base URL saat ditambahkan: coba GET {base}/models lalu
 // {base}/v1/models — simpan path yang hidup supaya chat nanti tidak
-// menebak-nebak. Return { modelsPath, chatPath }; gagal keduanya → throw
-// error ramah. Header auth hanya dikirim bila kunci diisi.
+// menebak-nebak. Return { baseUrl, modelsPath, chatPath }; gagal keduanya →
+// throw error ramah. Header auth hanya dikirim bila kunci diisi.
 export async function probeEndpoint(baseUrl, apiKey = '') {
-  const base = String(baseUrl || '').trim().replace(/\/+$/, '');
+  const base = normalizeEndpointUrl(baseUrl);
   if (!base) {
     throw { type: 'badrequest', message: 'Masukkan URL endpoint dulu, ya.' };
   }
   const candidates = ['/models', '/v1/models'];
+  const bases = [base];
+  const alt = apiHostVariant(base);
+  if (alt && alt !== base) bases.push(alt);
+
   let lastErr = null;
-  for (const modelsPath of candidates) {
-    let res;
-    try {
-      res = await providerFetch(`${base}${modelsPath}`, { headers: authHeader(apiKey) });
-    } catch {
-      // Browser melempar TypeError tanpa detail saat: offline, URL salah,
-      // ATAU respons diblokir CORS (server tidak mengirim
-      // Access-Control-Allow-Origin). Sebut keduanya di pesan.
-      lastErr = {
-        type: 'network',
-        message:
-          'Tidak bisa terhubung ke endpoint. Periksa URL & koneksi. Bila endpoint lokal (LM Studio/Ollama), aktifkan "Enable CORS" / CORS di pengaturan server-nya.',
-      };
-      continue; // coba kandidat berikutnya
-    }
-    if (res.ok) {
-      // Validasi body — status 200 tidak cukup. LM Studio menjawab
-      // GET /models dengan 200 + {"error": ...} → path itu harus ditolak.
-      let looksLikeModels = false;
+  let htmlErr = null;
+  for (let bi = 0; bi < bases.length; bi++) {
+    const candidateBase = bases[bi];
+    let htmlCount = 0;
+    for (const modelsPath of candidates) {
+      let res;
       try {
-        const data = await res.json();
-        looksLikeModels = data && !data.error && Array.isArray(data.data);
-      } catch { looksLikeModels = false; }
-      if (looksLikeModels) {
-        // chatPath disimpulkan dari modelsPath yang hidup.
-        const chatPath = modelsPath.replace(/\/models$/, '/chat/completions');
-        return { modelsPath, chatPath };
+        res = await providerFetch(`${candidateBase}${modelsPath}`, { headers: authHeader(apiKey) });
+      } catch {
+        // Browser melempar TypeError tanpa detail saat: offline, URL salah,
+        // ATAU respons diblokir CORS (server tidak mengirim
+        // Access-Control-Allow-Origin). Sebut keduanya di pesan.
+        lastErr = {
+          type: 'network',
+          message:
+            'Tidak bisa terhubung ke endpoint. Periksa URL & koneksi. Untuk endpoint lokal (LM Studio/Ollama), aktifkan CORS di server. Untuk tunnel (ngrok/localtunnel), pastikan tunnel masih aktif dan URL-nya benar.',
+        };
+        continue; // coba kandidat berikutnya
       }
-      lastErr = {
-        type: 'badrequest',
-        message: `${modelsPath} merespons tapi bukan daftar model. Coba URL lain (mis. .../v1).`,
-      };
-      continue; // coba kandidat berikutnya
+      // Baca body SEKALI sebagai teks: status 200 tidak cukup (LM Studio
+      // menjawab GET /models dengan 200 + {"error": ...}) dan halaman HTML
+      // (dashboard/Cloudflare) harus dikenali, bukan dilaporkan sebagai
+      // "model tidak tersedia".
+      let bodyText = '';
+      try { bodyText = await res.text(); } catch {}
+      if (looksLikeHtml(res, bodyText)) {
+        htmlCount++;
+        lastErr = htmlPageError(base);
+        continue; // coba kandidat berikutnya
+      }
+      if (res.ok) {
+        let data = null;
+        try { data = JSON.parse(bodyText); } catch { data = null; }
+        if (data && !data.error && Array.isArray(data.data)) {
+          // chatPath disimpulkan dari modelsPath yang hidup.
+          const chatPath = modelsPath.replace(/\/models$/, '/chat/completions');
+          return { baseUrl: candidateBase, modelsPath, chatPath };
+        }
+        lastErr = {
+          type: 'badrequest',
+          message: `${modelsPath} merespons tapi bukan daftar model. Coba URL lain (mis. .../v1).`,
+        };
+        continue; // coba kandidat berikutnya
+      }
+      // Baca body error: LM Studio/Gemini mengirim alasan yang spesifik
+      // (mis. "an LM Studio API token is required"). Tanpa ini pengguna hanya
+      // melihat pesan auth generik dan tidak tahu token harus dibuat di mana.
+      if (res.status === 404) {
+        // 404 saat probe = path/base URL salah, BUKAN model tidak tersedia.
+        lastErr = {
+          type: 'badrequest',
+          message: `${modelsPath} tidak ditemukan di endpoint (404). Periksa base URL — biasanya berakhiran /v1.`,
+        };
+        continue;
+      }
+      lastErr = { ...mapApiError(res.status, bodyText.slice(0, 800)) };
     }
-    // Baca body error: LM Studio/Gemini mengirim alasan yang spesifik
-    // (mis. "an LM Studio API token is required"). Tanpa ini pengguna hanya
-    // melihat pesan auth generik dan tidak tahu token harus dibuat di mana.
-    let bodyText = '';
-    try { bodyText = await res.text(); } catch {}
-    lastErr = { ...mapApiError(res.status, bodyText.slice(0, 800)) };
+    // Hanya coba api.<domain> bila SEMUA kandidat di host asli membalas HTML
+    // (artinya host itu halaman aplikasi, bukan API). Bila ada respons API
+    // sungguhan — termasuk 401 — jangan berpindah host.
+    if (bi === 0) {
+      htmlErr = htmlCount === candidates.length ? lastErr : null;
+      if (!htmlErr) break;
+    }
   }
-  throw lastErr || {
+  // Bila host api.* ada tapi menolak kunci, error auth lebih berguna daripada
+  // "ini halaman web". Selain itu tampilkan error HTML + saran URL API.
+  if (htmlErr && lastErr && lastErr.type === 'auth') throw lastErr;
+  throw htmlErr || lastErr || {
     type: 'badrequest',
     message: 'Endpoint tidak merespons /models maupun /v1/models. Periksa URL-nya.',
   };
@@ -533,7 +693,7 @@ export async function chatCompletion({
   // Jalur non-stream (fallback: tanpa onDelta, atau res.body tak didukung).
   const data = await res.json();
   const choice = data.choices && data.choices[0];
-  const text = (choice && choice.message && choice.message.content) || '';
+  const text = pickMessageText(choice && choice.message);
   const usage = data.usage || {};
   const tokens = {
     prompt: usage.prompt_tokens ?? undefined,
@@ -552,19 +712,35 @@ export async function chatCompletion({
   return { text: text.trim(), tokens, sources };
 }
 
+// Sebagian model (mis. Gemma reasoning di LM Studio, DeepSeek-R1) mengirim
+// jawaban di reasoning_content/reasoning, bukan content. Tanpa fallback ini
+// balasan tampil kosong walau endpoint & format OpenAI-nya benar.
+function pickMessageText(msg) {
+  if (!msg) return '';
+  if (typeof msg.content === 'string' && msg.content.trim()) return msg.content;
+  if (typeof msg.reasoning_content === 'string') return msg.reasoning_content;
+  if (typeof msg.reasoning === 'string') return msg.reasoning;
+  return typeof msg.content === 'string' ? msg.content : '';
+}
+
 // Parser SSE untuk chat streaming (format OpenAI):
 // baris "data: {json}" diakhiri "data: [DONE]". Delta konten diambil dari
 // choices[0].delta.content; usage (bila dikirim endpoint) dari chunk mana pun.
 export async function readSSE(res, onDelta, signal) {
   const reader = res.body.getReader();
   const dec = new TextDecoder();
-  let buf = '', text = '', usage = null, sources = [];
+  let buf = '', text = '', reasoning = '', usage = null, sources = [];
   const handle = (payload) => {
     if (payload === '[DONE]') return;
     let ev; try { ev = JSON.parse(payload); } catch { return; } // baris rusak → lewati
     const choice = ev.choices && ev.choices[0];
     const delta = choice && choice.delta && choice.delta.content;
-    if (delta) { text += delta; onDelta(text); }
+    const rdelta = choice && choice.delta && (choice.delta.reasoning_content || choice.delta.reasoning);
+    if (typeof delta === 'string' && delta) { text += delta; onDelta(text); }
+    else if (typeof rdelta === 'string' && rdelta) {
+      reasoning += rdelta;
+      if (!text) onDelta(reasoning); // hanya jika endpoint tak mengirim content
+    }
     if (ev.usage) usage = ev.usage;
     // Tangkap sumber grounding bila muncul di chunk (terakhir menang).
     let src = extractSources(ev);
@@ -589,10 +765,10 @@ export async function readSSE(res, onDelta, signal) {
     const tail = buf.trim();
     if (tail.startsWith('data:')) handle(tail.slice(5).trim());
   } catch (err) {
-    if (text) return { text, usage, sources }; // stream putus di tengah → pakai yang sudah datang
+    if (text || reasoning) return { text: text || reasoning, usage, sources }; // stream putus → pakai yang sudah datang
     throw { ...mapApiError(0), message: (err && err.message) || 'Koneksi streaming terputus.' };
   }
-  return { text, usage, sources };
+  return { text: text || reasoning, usage, sources };
 }
 
 // Bangun & kirim POST chat; tambahkan tools grounding bila diminta + didukung.

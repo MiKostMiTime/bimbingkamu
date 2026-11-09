@@ -25,9 +25,18 @@ const toAbs = (asset) => new URL(asset, self.location.href).href;
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_VERSION).then(async (cache) => {
-      // addAll() tetap lanjut walau ada yang gagal; log saja agar mudah didiagnosa.
+      // cache:'reload' memaksa ambil dari jaringan, bukan HTTP cache. Aset
+      // /js/* di Vercel ber-header immutable (1 tahun); tanpa ini update bundle
+      // setelah deploy bisa terus memakai salinan lama di perangkat pengguna.
       try {
-        await cache.addAll(PRECACHE_ASSETS.map(toAbs));
+        await Promise.all(
+          PRECACHE_ASSETS.map(async (asset) => {
+            const url = toAbs(asset);
+            const res = await fetch(new Request(url, { cache: 'reload' }));
+            if (!res.ok) throw new Error(`${res.status} ${asset}`);
+            await cache.put(url, res);
+          }),
+        );
       } catch (err) {
         console.warn('[SW] precache sebagian gagal:', err);
       }

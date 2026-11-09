@@ -4,8 +4,8 @@
 // CORS & Private Network Access (PNA) di browser.
 //
 // Aplikasi memanggil:
-//   GET/POST /api/proxy?url=<encoded-target>
-//            &method=&headers=<json>&body=<json>
+//   POST /api/proxy  body: { url, method, headers: [[k,v]], body? }
+//   (format lama tetap didukung: GET /api/proxy?url=&method=&headers=&body=)
 // -> server-side fetch() ke target, kembalikan envelope JSON:
 //      { status, ok, proxyStatus:'ok'|'threw', err?, headers, body }
 //
@@ -19,7 +19,15 @@
 function headersToPairs(headers) {
   const out = [];
   if (!headers) return out;
-  try { headers.forEach((v, k) => out.push([k, v])); } catch {}
+  if (Array.isArray(headers)) {
+    for (const pair of headers) {
+      if (Array.isArray(pair) && pair.length >= 2) out.push([String(pair[0]), String(pair[1])]);
+    }
+  } else if (typeof headers.forEach === 'function') {
+    headers.forEach((v, k) => out.push([k, v]));
+  } else if (typeof headers === 'object') {
+    for (const k of Object.keys(headers)) out.push([k, String(headers[k])]);
+  }
   return out;
 }
 
@@ -59,26 +67,49 @@ export default async function handler(req, res) {
   try { q = new URL(req.url, 'https://proxy'); } catch { q = new URL('/api/proxy', 'https://proxy'); }
   const params = q.searchParams;
 
-  const method = String(params.get('method') || req.method || 'GET').toUpperCase();
+  // Body request: klien baru mengirim envelope JSON di body (POST) agar body
+  // chat + materi yang besar tidak menjadi query string panjang (414).
+  let reqBody = '';
+  try { reqBody = await readBody(req); } catch {}
+  let envelope = null;
+  if (reqBody && reqBody.trim().startsWith('{')) {
+    try { envelope = JSON.parse(reqBody); } catch { envelope = null; }
+  }
 
-  const target = decodeURIComponent(params.get('url') || '');
+  const method = String(
+    (envelope && envelope.method) || params.get('method') || req.method || 'GET'
+  ).toUpperCase();
+
+  // URL dari envelope (sudah polos) atau query (URLSearchParams sudah
+  // men-decode; decodeURIComponent hanya untuk kompatibilitas klien lama).
+  let target = (envelope && envelope.url) || params.get('url') || '';
+  if (target && !envelope) {
+    try { target = decodeURIComponent(target); } catch {}
+  }
   if (!target) {
     return sendJson(res, 400, { status: 400, ok: false, proxyStatus: 'badrequest', err: 'Missing url parameter' });
   }
 
-  // Bangun init fetch server-side.
+  // Bangun init fetch server-side. Header HARUS diteruskan utuh: endpoint
+  // OpenAI-compatible menolak POST tanpa Content-Type (415) dan endpoint
+  // ber-key menolak tanpa Authorization (401).
   let init = { method, redirect: 'follow' };
-  try {
-    const headers = JSON.parse(params.get('headers') || '{}');
-    if (headers && typeof headers === 'object' && Object.keys(headers).length) init.headers = headers;
-  } catch {}
+  let headerSpec = envelope ? envelope.headers : null;
+  if (headerSpec == null) {
+    try { headerSpec = JSON.parse(params.get('headers') || 'null'); } catch {}
+  }
+  const headerPairs = headersToPairs(headerSpec);
+  if (headerPairs.length) init.headers = headerPairs;
 
-  // Body: prioritas dari query body (dibawa aplikasi), lalu body request asli.
-  let reqBody = '';
-  try { reqBody = await readBody(req); } catch {}
-  const qbody = params.get('body');
-  if (qbody != null && qbody !== '') init.body = qbody;
-  else if (reqBody != null && reqBody !== '') init.body = reqBody;
+  // Body: prioritas envelope (klien baru), lalu query body, lalu body request
+  // mentah (klien lama yang mem-POST langsung ke proksi).
+  if (envelope && envelope.body != null) {
+    init.body = typeof envelope.body === 'string' ? envelope.body : JSON.stringify(envelope.body);
+  } else {
+    const qbody = params.get('body');
+    if (qbody != null && qbody !== '') init.body = qbody;
+    else if (!envelope && reqBody !== '') init.body = reqBody;
+  }
 
   try {
     const net = await fetch(target, init);

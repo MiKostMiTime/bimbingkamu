@@ -175,7 +175,7 @@ export function showConfirm({ title, text, confirmLabel = 'Ya, lanjutkan', kind 
 const ONBOARDING_STEPS = [
   {
     title: 'Hubungkan endpoint AI',
-    text: 'Masukkan Base URL endpoint [OI]-compatible (mis. http://127.0.0.1:1234 untuk LM Studio). Daftar model diambil otomatis dari endpoint. Kunci API hanya perlu bila endpoint-mu butuh auth.',
+    text: 'Masukkan Base URL API endpoint [OI]-compatible (mis. http://127.0.0.1:1234 untuk LM Studio, atau https://api.electronhub.ai/v1). Gunakan alamat API, bukan halaman dashboard/aplikasi. Daftar model diambil otomatis dari endpoint. Kunci API hanya perlu bila endpoint-mu butuh auth.',
   },
   {
     title: 'Isi materi belajarmu',
