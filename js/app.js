@@ -168,7 +168,7 @@ export function isUserStop(err, stopped = userStopped) {
 // Tampilkan kode HTTP untuk error yang asalnya belum jelas,
 // supaya mudah dilaporkan/diagnosis.
 function errorDisplayText(err) {
-  if (err.status && ['server', 'model', 'unknown', 'badrequest'].includes(err.type)) {
+  if (err.status && ['server', 'model', 'unknown', 'badrequest', 'payment'].includes(err.type)) {
     return `${err.message} (HTTP ${err.status})`;
   }
   return err.message;

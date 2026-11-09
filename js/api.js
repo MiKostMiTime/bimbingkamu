@@ -9,6 +9,7 @@
 // Status 0 dipakai untuk error jaringan (fetch gagal).
 const MESSAGES = {
   auth: 'Kunci API tidak valid untuk endpoint ini. Periksa kembali kunci atau kosongkan bila endpoint lokal.',
+  payment: 'Kredit atau metode pembayaran endpoint belum diatur (mis. OpenRouter butuh kredit). Tambahkan kredit / billing di settings provider, lalu pilih model dan coba lagi.',
   lmstudioToken: 'LM Studio ini mewajibkan token. Buka LM Studio → Developer → Server Settings → Manage Tokens, buat token baru, lalu tempel di kolom Kunci API endpoint ini.',
   quota: 'Kuota/rate limit endpoint tercapai. Coba lagi beberapa saat.',
   network: 'Tidak bisa terhubung ke endpoint. Periksa koneksi & URL — bila endpoint lokal (LM Studio/Ollama), aktifkan "Enable CORS" di pengaturan server-nya.',
@@ -25,6 +26,9 @@ const MESSAGES = {
 const QUOTA_RE = /quota|RESOURCE_EXHAUSTED|rate limit|too many requests/i;
 const NOTFOUND_RE = /not found|NOT_FOUND|deprecated|retired/i;
 const AUTH_RE = /api key|PERMISSION_DENIED|invalid_api_key|unauthorized/i;
+// 402 Payment Required (mis. OpenRouter tanpa kredit) sering datang dengan
+// pesan khas; kenali dari teksnya supaya tampil jelas, bukan "unknown".
+const PAYMENT_RE = /insufficient credits?|payment required|add more credits|requires more credits|out of credits|credit balance/i;
 // LM Studio 0.4.0+ bisa mewajibkan token. Pesannya khas, dan lebih berguna
 // daripada pesan auth generik karena menyebut di mana token dibuat.
 const LMSTUDIO_TOKEN_RE = /lm ?studio api token|lm_api_token/i;
@@ -34,6 +38,7 @@ export function mapApiError(status, apiMessage = '') {
 
   // 1) Klasifikasi dari isi pesan API (paling akurat).
   if (LMSTUDIO_TOKEN_RE.test(apiMessage)) return { type: 'auth', message: MESSAGES.lmstudioToken, ...detail };
+  if (PAYMENT_RE.test(apiMessage)) return { type: 'payment', message: MESSAGES.payment, ...detail };
   if (QUOTA_RE.test(apiMessage)) return { type: 'quota', message: MESSAGES.quota, ...detail };
   if (NOTFOUND_RE.test(apiMessage)) return { type: 'model', message: MESSAGES.model, ...detail };
   if (AUTH_RE.test(apiMessage)) return { type: 'auth', message: MESSAGES.auth, ...detail };
@@ -42,6 +47,8 @@ export function mapApiError(status, apiMessage = '') {
   if (status === 401 || status === 403) {
     return { type: 'auth', message: MESSAGES.auth, ...detail };
   }
+  // 402 = pembayaran/kredit belum siap (mis. OpenRouter kehabisan kredit).
+  if (status === 402) return { type: 'payment', message: MESSAGES.payment, ...detail };
   if (status === 400) return { type: 'badrequest', message: MESSAGES.badrequest, ...detail };
   if (status === 429) return { type: 'quota', message: MESSAGES.quota, ...detail };
   if (status === 0) return { type: 'network', message: MESSAGES.network, ...detail };
