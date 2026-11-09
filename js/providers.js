@@ -424,11 +424,13 @@ export async function listModels(apiKey, provider) {
     seen.add(id);
     ids.push(id);
   }
-  // Batasi ke SATU model per endpoint (model pertama yang valid) agar chat hanya
-  // memakai satu model — mencegah crash bila endpoint melaporkan beberapa model
-  // (mis. embedding/secondary) yang tak bisa dipakai di perangkat user. Ambil model
-  // aktif endpoint (mis. model yang dimuat LM Studio).
-  return ids.slice(0, 1);
+  // Tampilkan SEMUA model chat-capable dari endpoint (sudah disaring: buang
+  // embedding-only / owned_by='embedding', dedup per id). Dropdown kini bisa
+  // memilih lebih dari satu model; chat tetap memakai SATU model terpilih.
+  // Filter di atas sudah membuang model secondary/embedding, jadi tak perlu
+  // dibatasi jumlahnya lagi. Ambil model aktif endpoint (mis. model yang dimuat
+  // LM Studio) sebagai pilihan awal bila belum dipilih (lihat app.js).
+  return ids;
 }
 
 // ===== CHAT COMPLETION (PATH OPENAI) =====

@@ -21,8 +21,13 @@
           Vercel "push -> deploy" jalan tanpa langkah build di CI. -->
     <link rel="stylesheet" href="./css/styles.min.css" />
 
-    <!-- Mulai muat aset kritis lebih awal (hemat latency di internet lambat) -->
-    <link rel="preload" href="./js/app.bundle.js" as="script" />
+    <!-- Mulai muat aset kritis lebih awal (hemat latency di internet lambat).
+         app.bundle.js dimuat via <script type="module">, jadi pakai
+         modulepreload (bukan preload as=script): skrip modul & klasik disimpan
+         di bucket cache berbeda → as=script tak terpakai dan muncul warning
+         "preloaded but not used". modulepreload dipakai ulang oleh tag modul.
+         marked/purify adalah skrip klasik → as=script tetap benar. -->
+    <link rel="modulepreload" href="./js/app.bundle.js" />
     <link rel="preload" href="./vendor/marked/marked.min.js" as="script" />
     <link rel="preload" href="./vendor/dompurify/purify.min.js" as="script" />
 
@@ -257,7 +262,7 @@
               </div>
               <p class="setup-card__text">
                 LM Studio berjalan di komputermu, gratis, tanpa internet. Karena BimbingKamu dibuka
-                lewat HTTPS, browser memblokir koneksi langsung ke <code>http://127.0.0.1:1234</code>
+                lewat HTTPS, browser memblokir koneksi langsung ke <code>http://localhost:1234</code>
                 (CORS). Pasang ekstensi Chrome <strong>BimbingKamu - LM Studio Bridge</strong> sekali saja
                 di browser desktop, lalu sambungkan langsung. Tanpa terminal, tanpa ngrok.
               </p>
@@ -274,7 +279,7 @@
               </ol>
               <p class="setup-col__note"><strong>Base URL sesuai perangkat:</strong></p>
               <ul class="setup-list">
-                <li>Komputer ini: <code class="setup-code">http://127.0.0.1:12341</code> atau <code class="setup-code">http://localhost:1234</code></li>
+                <li>Komputer ini: <code class="setup-code">http://localhost:1234</code> atau <code class="setup-code">http://localhost:1234</code></li>
                 <li>Laptop lain di Wi-Fi yang sama, dengan ekstensi terpasang: <code class="setup-code">http://10.xx.xxx.xxx:1234</code> (ganti dengan IP komputer yang menjalankan LM Studio).</li>
                 <li>Akses dari HP atau luar jaringan: pakai kartu <strong>HP / tablet</strong> di atas (URL HTTPS dari tunnel).</li>
               </ul>
