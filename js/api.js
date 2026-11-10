@@ -19,6 +19,7 @@ const MESSAGES = {
   badrequest: 'Permintaan ditolak endpoint. Kemungkinan model ini tidak kompatibel dengan format percakapan, coba gunakan model lain atau kurangi materi.',
   toobig: 'Materi atau riwayat percakapan terlalu besar untuk dikirim ke endpoint. Kurangi ukuran materi (hasil upload) atau ringkas percakapan, lalu coba lagi.',
   truncated: 'Jawaban terpotong karena terlalu panjang. Minta tutor melanjutkan.',
+  blocked: 'Endpoint memblokir akses dari server Vercel (Cloudflare 403 "Attention Required! / You have been blocked"). Ini BUKAN masalah kunci API — endpoint belakang proteksi bot Cloudflare yang memblokir IP datacenter Vercel/AWS. Hubungi pemilik endpoint untuk memasukkan IP Vercel (54.175.0.0/16) ke allowlist Cloudflare, atau matikan "Attention Required!" bot challenge di path API.',
 };
 
 // Pola untuk memperhalus klasifikasi dari teks error API (lebih akurat
@@ -32,9 +33,23 @@ const PAYMENT_RE = /insufficient credits?|payment required|add more credits|requ
 // LM Studio 0.4.0+ bisa mewajibkan token. Pesannya khas, dan lebih berguna
 // daripada pesan auth generik karena menyebut di mana token dibuat.
 const LMSTUDIO_TOKEN_RE = /lm ?studio api token|lm_api_token/i;
+// Endpoint belakang Cloudflare bot-protection membalas halaman HTML "Attention
+// Required! / You have been blocked" (sering 403) BUKAN JSON API. Kenali dari
+// isinya agar pesan yang muncul actionable, bukan "kunci API invalid" generik.
+const BLOCKED_RE = /attention required|you have been blocked|blocked_why|enable cookies|cf-cookie-error|antibot|just a moment|checking your browser|i-am-human|cf-challenge|your ip is blocked from/i;
 
-export function mapApiError(status, apiMessage = '') {
+export function mapApiError(status, apiMessage = '', rawText = '') {
   const detail = { status, apiMessage };
+
+  // 0) Body mentah (rawText) = kebenaran apa yang dikembalikan server. Endpoint
+  //     belakang Cloudflare bot-protection membalas halaman HTML "Attention
+  //     Required! / You have been blocked" (sering 403) BUKAN JSON API. Deteksi
+  //     dari body mentah agar pesan actionable, bukan "auth" generik yang
+  //     menyesatkan. Menang di atas semua heuristik berbasis teks & status.
+  const blockText = String(rawText || '');
+  if (blockText && BLOCKED_RE.test(blockText)) {
+    return { type: 'blocked', message: MESSAGES.blocked, ...detail };
+  }
 
   // 1) Klasifikasi dari isi pesan API (paling akurat).
   if (LMSTUDIO_TOKEN_RE.test(apiMessage)) return { type: 'auth', message: MESSAGES.lmstudioToken, ...detail };

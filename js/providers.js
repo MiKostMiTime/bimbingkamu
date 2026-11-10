@@ -693,12 +693,26 @@ export async function chatCompletion({
       onViaProxy: () => { viaProxy = true; },
     });
   } catch (err) {
+    // Pastikan error TIDAK keluar mentah (type undefined → "error API: undefined").
+    // providerFetch melempar exception bila proksi /api/proxy juga gagal (mis.
+    // endpoint memblokir server Vercel). Map ke network + pertahankan pesan asli.
+    if (!err || typeof err.type === 'undefined') {
+      const mapped = mapApiError(0);
+      throw { ...mapped, message: (err && err.message) ? err.message : mapped.message };
+    }
     throw err;
   }
 
   if (!res.ok) {
+    // Tangkap body mentah (string) SEKALI: (a) pesan error JSON (.error.message),
+    // (b) deteksi halaman "blocked"/Cloudflare agar pesan actionable. Body Response
+    // hanya bisa dibaca sekali → simpan ke var, bukan dipanggil berkali-kali.
     let apiMessage = '';
-    try { apiMessage = (await res.json()).error?.message || ''; } catch {}
+    let rawText = '';
+    try {
+      rawText = await res.text();
+      try { const j = JSON.parse(rawText); apiMessage = j.error?.message || ''; } catch {}
+    } catch {}
     // ===== KASCADE KOMPATIBILITAS (400/413/422) =====
     // Sebagian model/endpoint menolak field tertentu (tools, stream_options,
     // max_tokens terlalu besar) atau body terlalu besar (413). Lucuti field
