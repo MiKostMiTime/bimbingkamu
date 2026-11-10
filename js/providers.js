@@ -579,9 +579,7 @@ export async function probeEndpoint(baseUrl, apiKey = '') {
     throw {
       type: 'local',
       message:
-        'Endpoint lokal (http://...) tidak bisa dibuka langsung dari halaman HTTPS karena browser memblokir "mixed content" (sumber HTTP).\n' +
-        '1) Tunnel HTTPS — jalankan `ngrok http 1234` atau `cloudflared tunnel --url http://localhost:1234` di komputer, lalu tempel URL HTTPS yang muncul sebagai Base URL.\n' +
-        '2) Ekstensi Chrome — pasang "BimbingKamu – LM Studio Bridge" untuk koneksi langsung ke local/LAN tanpa terminal.',
+        'Endpoint lokal (http://...) tidak bisa dibuka langsung dari halaman HTTPS karena browser memblokir "mixed content" (sumber HTTP). 1) Tunnel HTTPS — jalankan ngrok http 1234 atau cloudflared tunnel --url http://localhost:1234 di komputer, lalu tempel URL HTTPS yang muncul sebagai Base URL. 2) Ekstensi Chrome — pasang "BimbingKamu - LM Studio Bridge" untuk koneksi langsung ke local/LAN tanpa terminal.',
     };
   }
 
