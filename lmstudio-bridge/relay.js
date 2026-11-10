@@ -20,6 +20,8 @@
   const TARGET_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', '::1'];
   const PRIVATE_V4_RE = /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/;
   const NGROK_RE = /(^|\.)ngrok(-free)?\.(app|dev|io|pizza|pro|page)$/;
+  // localtunnel: *.loca.lt — pertahanan berlapis (relay mengulang deteksi target).
+  const LOCA_LT_RE = /(^|\.)loca\.lt$/;
 
   function isTargetHost(host) {
     host = (host || '').toLowerCase();
@@ -34,6 +36,7 @@
     if (host.endsWith('.local')) return true;
     if (PRIVATE_V4_RE.test(host)) return true;
     if (NGROK_RE.test(host)) return true;
+    if (LOCA_LT_RE.test(host)) return true;
     return false;
   }
 

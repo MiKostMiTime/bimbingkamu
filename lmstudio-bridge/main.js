@@ -22,6 +22,9 @@
   // subdomainnya agar URL seperti *.ngrok-free.dev ikut dialihkan. Ini penyebab
   // error CORS paling umum: domain ngrok tidak cocok, fetch jatuh ke browser.
   const NGROK_RE = /(^|\.)ngrok(-free)?\.(app|dev|io|pizza|pro|page)$/;
+  // localtunnel: *.loca.lt. providers.js sudah menambah header bypass-nya,
+  // jadi bridge juga harus mengalihkan fetch ke SW agar selaras (mobile).
+  const LOCA_LT_RE = /(^|\.)loca\.lt$/;
   function isTargetHost(host) {
     host = (host || '').toLowerCase();
     // Buang port, tetapi pertahankan kurung IPv6: [::1]:1234 -> [::1].
@@ -36,6 +39,7 @@
     if (host.endsWith('.local')) return true;
     if (PRIVATE_V4_RE.test(host)) return true;
     if (NGROK_RE.test(host)) return true;
+    if (LOCA_LT_RE.test(host)) return true;
     return false;
   }
   function targetHref(input) {
@@ -289,6 +293,7 @@
   window.__bkbBridgeDebug = {
     version: VERSION,
     ngrok: String(NGROK_RE),
+    localtunnel: String(LOCA_LT_RE),
     private: String(PRIVATE_V4_RE),
     isTargetUrl: (u) => isTargetUrl(u),
     size: () => registry.size,
