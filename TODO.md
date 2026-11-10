@@ -10,6 +10,6 @@ proxy fallback completes. → `chatCompletion()` does `if (!res.ok)` on undefine
 - [x] Edit providers.js: shared winnerGate so race never returns undefined
 - [x] Make DIRECT_TIMEOUT injectable (opts.timeoutMs) for fast tests
 - [x] Add regression test tests/provider-fetch-race.test.js (5 tests)
-- [x] Run `node --test` and confirm pass (5/5)
-- [ ] `npm run build` → regenerate js/app.bundle.js
-- [ ] git add + commit
+- [x] Run `node --test` and confirm pass (full suite 6/6)
+- [x] `npm run build` → regenerate js/app.bundle.js (+ css/styles.min.css)
+- [x] git add + commit (358c1a7: providers.js + app.bundle.js + test + TODO.md)

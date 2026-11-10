@@ -10,7 +10,8 @@
   },
   "scripts": {
     "test": "node --test",
-    "build": "if [ -f scripts/build.mjs ]; then node scripts/build.mjs; else echo \"static: bundle prebuilt, skip build\"; fi"
+    "build": "if [ -f scripts/build.mjs ]; then node scripts/build.mjs; else echo \"static: bundle prebuilt, skip build\"; fi",
+    "predeploy": "node scripts/predeploy.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

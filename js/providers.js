@@ -186,7 +186,11 @@ export async function providerFetch(targetUrl, init = {}, opts = {}) {
   }
 
   // Fallback proksi — jalur andal untuk endpoint remote (bebas CORS + PNA).
+  // CATATAN: setiap kali proksi dipakai (opaque / threw / timeout) lewat sini,
+  // jadi titik tunggal untuk mencatat viaProxy → dipakai cascade retry agar tak
+  // re-race direct→proxy berulang di endpoint remote.
   async function toProxy() {
+    if (typeof opts.onViaProxy === 'function') opts.onViaProxy();
     logFetch('proxy', `→ ${targetUrl}`);
     try {
       const res = await proxyFetch(targetUrl, init);
@@ -364,6 +368,19 @@ function authHeader(apiKey) {
 // fetch() memperlakukan string seperti itu sebagai path RELATIF ke aplikasi —
 // bukan host tujuan — sehingga probe/chat gagal walau endpoint sehat. Tambahkan
 // skema: host lokal/LAN → http, host publik → https.
+// Normalisasi skema + host lowercase + rapatkan slash ganda di path agar
+// chatPath yang ditempel afterward tidak jadi ".../v1//chat/completions".
+function normalizeUrlCaseAndSlashes(base) {
+  try {
+    const u = new URL(base);
+    const scheme = u.protocol.replace(/:$/, '').toLowerCase();
+    const host = u.host.toLowerCase();
+    const pathname = u.pathname.replace(/\/{2,}/g, '/').replace(/\/+$/, '');
+    return `${scheme}://${host}${pathname}${u.search}${u.hash}`;
+  } catch {
+    return base.replace(/\/+$/, '');
+  }
+}
 export function normalizeEndpointUrl(baseUrl) {
   let base = String(baseUrl || '').trim();
   if (!base) return '';
@@ -385,7 +402,7 @@ export function normalizeEndpointUrl(baseUrl) {
       /^[a-z0-9-]+$/i.test(host);
     base = `${isLocal ? 'http' : 'https'}://${base}`;
   }
-  return base.replace(/\/+$/, '');
+  return normalizeUrlCaseAndSlashes(base);
 }
 
 // Halaman aplikasi/dashboard (app.*, www.*) sering bukan API. Untuk pola
@@ -670,8 +687,11 @@ export async function chatCompletion({
 
   let res;
   let streamStripped = false; // fallback 413: stream dilepas → respons jadi JSON
+  let viaProxy = false;       // request pertama lewat proksi? (endpoint remote)
   try {
-    res = await buildChatRequest(provider, apiKey, body, grounding, signal);
+    res = await buildChatRequest(provider, apiKey, body, grounding, signal, {
+      onViaProxy: () => { viaProxy = true; },
+    });
   } catch (err) {
     throw err;
   }
@@ -696,11 +716,25 @@ export async function chatCompletion({
       else if (res.status === 413 && cur.stream) { fb = { ...cur }; delete fb.stream; streamStripped = true; }
       if (!fb) break;
       cur = fb;
+      const target = `${provider.baseUrl}${provider.chatPath}`;
       try {
-        res = await providerFetch(`${provider.baseUrl}${provider.chatPath}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(apiKey) },
-          body: JSON.stringify(cur), signal,
-        });
+        // Bila request pertama lewat proksi (endpoint remote/ngrok: fetch langsung
+        // opaque/hang), retry juga lewat proksi LANGSUNG — hindari re-race
+        // direct→proxy yang membuang waktu & kerja tiap stripped-field. Endpoint
+        // lokal (direct cepat) tetap pakai providerFetch agar tak ada perubahan.
+        res = viaProxy
+          ? await proxyFetch(target, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...authHeader(apiKey) },
+              body: JSON.stringify(cur),
+              signal,
+            })
+          : await providerFetch(target, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...authHeader(apiKey) },
+              body: JSON.stringify(cur),
+              signal,
+            });
       } catch { throw { ...mapApiError(0) }; }
       if (!res.ok) {
         try { apiMessage = (await res.json()).error?.message || apiMessage; } catch {}
@@ -807,14 +841,16 @@ export async function readSSE(res, onDelta, signal) {
 }
 
 // Bangun & kirim POST chat; tambahkan tools grounding bila diminta + didukung.
-async function buildChatRequest(provider, apiKey, body, grounding, signal) {
+// `fetchOpts` diteruskan ke providerFetch (mis. { onViaProxy }) agar pemanggil
+// bisa mencatat jalur transport request pertama.
+async function buildChatRequest(provider, apiKey, body, grounding, signal, fetchOpts = {}) {
   if (grounding && provider.supportsGrounding) body.tools = [{ type: 'function', function: { name: 'google_search', description: 'web grounding' } }];
   return providerFetch(`${provider.baseUrl}${provider.chatPath}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeader(apiKey) },
     body: JSON.stringify(body),
     signal,
-  });
+  }, fetchOpts);
 }
 
 // Convenience untuk app.js: providerChat(id, params) → chatCompletion.
