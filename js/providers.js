@@ -381,6 +381,19 @@ function normalizeUrlCaseAndSlashes(base) {
     return base.replace(/\/+$/, '');
   }
 }
+// Host lokal/LAN = target pakai skema http:// (bukan https://). Dipakai
+// normalizeEndpointUrl() untuk memilih skema, DAN probeEndpoint() agar error
+// Mixed Content di endpoint lokal diberi panduan SPESIFIK (tunnel HTTPS /
+// ekstensi bridge), bukan pesan jaringan generik yang membingungkan.
+export function isLocalHost(host) {
+  const h = String(host || '').toLowerCase();
+  return h === 'localhost' || h === '[::1]' || h === '::1' ||
+    h === 'host.docker.internal' || h.endsWith('.local') ||
+    /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(h) || /^169\.254\./.test(h) ||
+    /^[a-z0-9-]+$/i.test(h);
+}
+
 export function normalizeEndpointUrl(baseUrl) {
   let base = String(baseUrl || '').trim();
   if (!base) return '';
@@ -394,12 +407,7 @@ export function normalizeEndpointUrl(baseUrl) {
       .replace(/^\[([^\]]+)\](?::\d+)?$/, '[$1]')
       .replace(/:\d+$/, '')
       .toLowerCase();
-    const isLocal =
-      host === 'localhost' || host === '[::1]' || host === '::1' ||
-      host === 'host.docker.internal' || host.endsWith('.local') ||
-      /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(host) || /^169\.254\./.test(host) ||
-      /^[a-z0-9-]+$/i.test(host);
+    const isLocal = isLocalHost(host);
     base = `${isLocal ? 'http' : 'https'}://${base}`;
   }
   return normalizeUrlCaseAndSlashes(base);
@@ -483,6 +491,11 @@ export async function probeEndpoint(baseUrl, apiKey = '') {
   if (!base) {
     throw { type: 'badrequest', message: 'Masukkan URL endpoint dulu, ya.' };
   }
+  // Host lokal/LAN (http://) rawan Mixed Content di halaman HTTPS: fetch
+  // LANGSUNG diblokir browser dan proksi cloud Vercel tak jangkau
+  // localhost/IP-private. Tandai agar error-nya diberi panduan khusus.
+  let hostLocal = false;
+  try { hostLocal = isLocalHost(new URL(base).hostname); } catch { hostLocal = false; }
   const candidates = ['/models', '/v1/models'];
   const bases = [base];
   const alt = apiHostVariant(base);
@@ -504,7 +517,7 @@ export async function probeEndpoint(baseUrl, apiKey = '') {
         lastErr = {
           type: 'network',
           message:
-            'Tidak bisa terhubung ke endpoint. Periksa URL & koneksi. Untuk endpoint lokal (LM Studio/Ollama), aktifkan CORS di server. Untuk tunnel (ngrok/localtunnel), pastikan tunnel masih aktif dan URL-nya benar.',
+            'Tidak bisa terhubung ke endpoint. Periksa URL & koneksi. Bila diakses dari perangkat lain, pastikan server aktif dan CORS diaktifkan.',
         };
         continue; // coba kandidat berikutnya
       }
@@ -557,6 +570,21 @@ export async function probeEndpoint(baseUrl, apiKey = '') {
   // Bila host api.* ada tapi menolak kunci, error auth lebih berguna daripada
   // "ini halaman web". Selain itu tampilkan error HTML + saran URL API.
   if (htmlErr && lastErr && lastErr.type === 'auth') throw lastErr;
+
+  // Endpoint lokal/LAN (http://): di halaman HTTPS, fetch LANGSUNG diblokir
+  // Mixed Content dan proksi cloud tak jangkau localhost/IP-private. Beri
+  // panduan SPESIFIK (tunnel HTTPS / ekstensi bridge), bukan pesan jaringan
+  // generik. Hanya saat kegagalan JARINGAN (bukan dashboard/HTML atau auth).
+  if (hostLocal && lastErr && lastErr.type === 'network') {
+    throw {
+      type: 'local',
+      message:
+        'Endpoint lokal (http://...) tidak bisa dibuka langsung dari halaman HTTPS karena browser memblokir "mixed content" (sumber HTTP).\n' +
+        '1) Tunnel HTTPS — jalankan `ngrok http 1234` atau `cloudflared tunnel --url http://localhost:1234` di komputer, lalu tempel URL HTTPS yang muncul sebagai Base URL.\n' +
+        '2) Ekstensi Chrome — pasang "BimbingKamu – LM Studio Bridge" untuk koneksi langsung ke local/LAN tanpa terminal.',
+    };
+  }
+
   throw htmlErr || lastErr || {
     type: 'badrequest',
     message: 'Endpoint tidak merespons /models maupun /v1/models. Periksa URL-nya.',
