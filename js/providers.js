@@ -405,7 +405,36 @@ export function normalizeEndpointUrl(baseUrl) {
   return normalizeUrlCaseAndSlashes(base);
 }
 
-// Halaman aplikasi/dashboard (app.*, www.*) sering bukan API. Untuk pola
+// Gabung baseUrl + path relatif (modelsPath/chatPath) menjadi URL lengkap.
+// Berbeda dengan concat sederhana `${baseUrl}${path}` yang bisa DOBEL segmen
+// (mis. base .../v1 + modelsPath /v1/models -> .../v1/**v1**/models → 403),
+// fungsi ini RAPATKAN slash ganda DAN HAPUS segmen path duplikat berurutan
+// (/v1/v1 -> /v1). Scheme + host dipertahankan via URL. Untuk provider tanpa
+// dobel segmen (OpenRouter/Gemini/OpenAI) hasilnya identik dengan concat lama
+// → no-op, tak ada regress. Dipakai listModels + buildChatRequest agar daftar
+// model & chat selalu ke path yang benar walau modelsPath tersimpan dobel.
+export function joinProviderPath(baseUrl, relPath) {
+  const base = normalizeEndpointUrl(baseUrl);
+  let path = String(relPath || '');
+  if (!path.startsWith('/')) path = `/${path}`;
+  try {
+    const u = new URL(base);
+    const segs = u.pathname.replace(/\/+$/, '').split('/').filter(Boolean)
+      .concat(path.split('/').filter(Boolean));
+    const out = [];
+    for (const s of segs) {
+      if (out.length && out[out.length - 1] === s) continue; // hapus duplikat berurutan
+      out.push(s);
+    }
+    u.pathname = `/${out.join('/')}`;
+    return u.toString();
+  } catch {
+    // Fallback bila base tak valid: concat + rapatkan slash.
+    return `${base.replace(/\/+$/, '')}${path.replace(/\/{2,}/g, '/')}`;
+  }
+}
+
+// Halaman aplikasi/dashboard (app.*, www.*) sering bukan API.
 // pemisahan yang umum ini, API biasanya ada di api.<domain>. Hanya dipakai
 // saat URL yang dimasukkan benar-benar membalas HTML (bukan API), dan hanya
 // root host yang dicoba agar path dashboard tidak ikut terbawa.
@@ -612,7 +641,7 @@ export async function listModels(apiKey, provider) {
   }
   let res;
   try {
-    res = await providerFetch(`${provider.baseUrl}${provider.modelsPath}`, { headers: authHeader(apiKey) });
+    res = await providerFetch(joinProviderPath(provider.baseUrl, provider.modelsPath), { headers: authHeader(apiKey) });
   } catch {
     // fetch melempar saat offline / jaringan terputus → error network.
     throw { ...mapApiError(0) };
@@ -730,7 +759,7 @@ export async function chatCompletion({
       else if (res.status === 413 && cur.stream) { fb = { ...cur }; delete fb.stream; streamStripped = true; }
       if (!fb) break;
       cur = fb;
-      const target = `${provider.baseUrl}${provider.chatPath}`;
+      const target = joinProviderPath(provider.baseUrl, provider.chatPath);
       try {
         // Bila request pertama lewat proksi (endpoint remote/ngrok: fetch langsung
         // opaque/hang), retry juga lewat proksi LANGSUNG — hindari re-race
@@ -859,7 +888,7 @@ export async function readSSE(res, onDelta, signal) {
 // bisa mencatat jalur transport request pertama.
 async function buildChatRequest(provider, apiKey, body, grounding, signal, fetchOpts = {}) {
   if (grounding && provider.supportsGrounding) body.tools = [{ type: 'function', function: { name: 'google_search', description: 'web grounding' } }];
-  return providerFetch(`${provider.baseUrl}${provider.chatPath}`, {
+  return providerFetch(joinProviderPath(provider.baseUrl, provider.chatPath), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeader(apiKey) },
     body: JSON.stringify(body),
