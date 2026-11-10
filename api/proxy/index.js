@@ -111,8 +111,50 @@ export default async function handler(req, res) {
     else if (!envelope && reqBody !== '') init.body = reqBody;
   }
 
+  // Timeout internal (~120s, bisa diatur via ?timeoutMs=). Melindungi dari
+  // endpoint yang menggantung agar proksi tak pernah memakan waktu lebih lama
+  // dari batas serverless Vercel. AbortController dipakai juga agar body
+  // upstream (text()/stream read()) bisa dibatalkan saat timeout.
+  const TIMEOUT_MS = Number(params.get('timeoutMs')) || 120000;
+  let timedOut = false;
+  const acT = new AbortController();
+  let timerT = setTimeout(() => { timedOut = true; acT.abort(); }, TIMEOUT_MS);
+
+  // Jejak apakah stream sudah mulai ditulis (writeHead+write). Bila ya, error
+  // tak bisa balik envelope (header sudah terkirim) → akhiri saja stream-nya.
+  let piped = false;
   try {
-    const net = await fetch(target, init);
+    const net = await fetch(target, { ...init, signal: acT.signal });
+
+    // Deteksi target streaming dari content-type upstream. Chat streaming
+    // (OpenAI-compatible / LM Studio) membalas text/event-stream; deteksi ini
+    // membuat proksi mengalirkan UTUH (passthrough) TANPA dibuffer ke envelope,
+    // jadi delta muncul LIVE + tak terbatas 60s serverless.
+    const ct = typeof net.headers.get === 'function'
+      ? net.headers.get('content-type') || ''
+      : '';
+    const isStream = /text\/event-stream|application\/x-ndjson/i.test(ct);
+
+    if (isStream) {
+      res.writeHead(net.status, {
+        'content-type': ct || 'text/event-stream',
+        'cache-control': 'no-cache',
+        'access-control-allow-origin': '*',
+      });
+      piped = true;
+      const reader = net.body.getReader();
+      for (;;) {
+        if (acT.signal.aborted) break; // timeout → hentikan aliran
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(Buffer.isBuffer(value) ? value : Buffer.from(value));
+      }
+      clearTimeout(timerT);
+      res.end();
+      return;
+    }
+
+    // Jalur envelope (non-stream, mis. GET /models): buffer utuh → JSON.
     const text = await net.text();
     const headers = {};
     if (net.headers && typeof net.headers.forEach === 'function') {
@@ -120,6 +162,7 @@ export default async function handler(req, res) {
     } else if (net.headers) {
       for (const [k, v] of Object.entries(net.headers || {})) headers[k] = v;
     }
+    clearTimeout(timerT);
     return sendJson(res, 200, {
       status: net.status,
       ok: net.ok,
@@ -128,7 +171,13 @@ export default async function handler(req, res) {
       body: text,
     });
   } catch (e) {
+    clearTimeout(timerT);
+    if (piped) { try { res.end(); } catch {} return; } // stream sudah mulai → tak bisa envelope
     const msg = String((e && e.message) || e);
-    return sendJson(res, 200, { status: 0, ok: false, proxyStatus: 'threw', err: msg, body: '' });
+    return sendJson(res, 200, {
+      status: 0, ok: false,
+      proxyStatus: timedOut ? 'timeout' : 'threw',
+      err: msg, body: '',
+    });
   }
 }

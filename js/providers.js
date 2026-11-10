@@ -116,6 +116,15 @@ async function proxyFetch(targetUrl, init = {}) {
     signal: init.signal,
   });
   if (!res.ok) throw { type: 'network', message: 'Proksi endpoint gagal memanggil target.' };
+
+  // Proksi kini membalas dalam 2 mode: (a) stream mentah text/event-stream untuk
+  // chat streaming (passthrough → readSSE), atau (b) envelope JSON untuk
+  // non-stream (GET /models). Deteksi dari content-type agar stream mengalir live.
+  const ct = typeof res.headers.get === 'function' ? (res.headers.get('content-type') || '') : '';
+  if (/text\/event-stream|application\/x-ndjson/i.test(ct)) {
+    return res; // stream mentah: lewatkan utuh ke chatCompletion → readSSE
+  }
+
   let env; try { env = await res.json(); } catch { env = {}; }
   const bodyText = env.body != null ? env.body : '';
   return new Response(bodyText, {
