@@ -6,7 +6,7 @@ import { STORAGE_KEYS, getLevelLabel, migrateLegacyProviderSettings } from './co
 import { estimateCost, formatCostIDR, fetchUsdIdr, effectiveUsdIdr, cachedUsdIdr } from './pricing.js';
 import { storage } from './storage.js';
 import { attachModelSearch } from './model-search.js';
-import { resolveProviders, listModels, providerChat, probeEndpoint, fetchContextLimit, fetchModelPricing, resolveApiKey, addProvider, updateProvider, removeProvider, nextActiveAfterDelete, DEFAULT_PROVIDERS } from './providers.js';
+import { resolveProviders, listModels, pickModelIdsForDropdown, providerChat, probeEndpoint, fetchContextLimit, fetchModelPricing, resolveApiKey, addProvider, updateProvider, removeProvider, nextActiveAfterDelete, DEFAULT_PROVIDERS } from './providers.js';
 import { needsSummarize, splitForSummary, summarySystemPrompt, summaryMessage, buildContentsFrom } from './summarize.js';
 import { retrieveWithScores, joinScoredChunks } from './rag.js';
 import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
@@ -299,14 +299,19 @@ async function refreshProviderModelList() {
   togglePanelLoading('panelProvider', true);
   try {
     const ids = await listModels(activeApiKey(), provider);
-    if (!ids.length) {
+    // Endpoint baru → daftar model BARU. Bila kosong/gagal → [] → dropdown
+    // dikosongkan (resetModelDropdown), BUKAN mempertahankan model endpoint
+    // sebelumnya (menyebabkan daftar "stale").
+    const nextIds = pickModelIdsForDropdown({ ids });
+    if (!nextIds.length) {
+      resetModelDropdown(searchApi);
       updateConnStatus('error');
-      return; // kosong → biarkan pilihan lama
+      return;
     }
     // Id hanya huruf/angka/titik/tiret (disaring regex di providers.js) → aman
     // untuk disisipkan ke <option>.
-    dom.model.innerHTML = ids.map((id) => `<option value="${id}">${id}</option>`).join('');
-    dom.model.value = ids.includes(state.settings.model) ? state.settings.model : ids[0];
+    dom.model.innerHTML = nextIds.map((id) => `<option value="${id}">${id}</option>`).join('');
+    dom.model.value = nextIds.includes(state.settings.model) ? state.settings.model : nextIds[0];
     state.settings.model = dom.model.value;
     persistSettings();
     // Re-terapkan query ke opsi BARU (rebuild mengganti seluruh <option>), agar
@@ -329,11 +334,23 @@ async function refreshProviderModelList() {
       if (r) { state.usdIdr = r; renderTokenStat(); }
     });
   } catch (err) {
+    // Gagal (network/mixed-content/offline) → kosongkan dropdown agar tak tampil
+    // model endpoint SEBELUMNYA yang stale.
+    resetModelDropdown(searchApi);
     updateConnStatus('error');
-    console.warn('[BimbingKamu] gagal memuat daftar model endpoint:', err && err.message);
+    console.warn('[BimbingKamu] gagal memuang daftar model endpoint:', err && err.message);
   } finally {
     togglePanelLoading('panelProvider', false);
   }
+}
+
+// Kosongkan dropdown model + hapus model aktif saat endpoint tak punya model
+// (kosong/gagal). Dipakai refreshProviderModelList agar switch/tambah endpoint
+// tak menampilkan model endpoint SEBELUMNYA (stale).
+function resetModelDropdown(searchApi) {
+  dom.model.innerHTML = '<option value="">Belum ada model</option>';
+  state.settings.model = '';
+  if (searchApi) searchApi.reset(); // perbarui badge → total=1, filter tetap bersih
 }
 
 // Isi selector endpoint (#providerSelect di header) dari registry +

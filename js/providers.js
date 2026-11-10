@@ -700,6 +700,17 @@ export async function listModels(apiKey, provider) {
   return ids;
 }
 
+// Hitung daftar id model yang PAS untuk dropdown setelah switch/tambah endpoint.
+// Kembalikan [] bila endpoint tak punya model chat (listModels kosong) atau saat
+// listModels GAGAL, sehingga UI mengosongkan dropdown — BUKAN mempertahankan model
+// dari endpoint SEBELUMNYA yang menyebabkan daftar "stale" / menyesatkan. Dipakai
+// refreshProviderModelList() di app.js: bila hasilnya [], dropdown direset.
+export function pickModelIdsForDropdown(result) {
+  if (!result || result.error || !Array.isArray(result.ids)) return [];
+  const ids = result.ids.filter((id) => id && String(id).length > 0);
+  return ids.length ? ids : [];
+}
+
 // ===== CHAT COMPLETION (PATH OPENAI) =====
 // POST ${baseUrl}${chatPath} body { model, messages, max_tokens, tools?, generationConfig? }.
 // Parameter: { provider, apiKey, model, systemPrompt, contents, maxTokens, thinkingLevel, grounding, onDelta, signal }
