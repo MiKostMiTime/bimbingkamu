@@ -7,7 +7,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveModelMeta, deriveUseCases, MODEL_USE_CASES, PROVIDER_MODEL_DEFS, rankModels, recommendModel } from '../js/modelRegistry.js';
+import { resolveModelMeta, deriveUseCases, MODEL_USE_CASES, PROVIDER_MODEL_DEFS, rankModels, recommendModel, formatOptionLabel, buildRichOptions } from '../js/modelRegistry.js';
 
 // ===== TASK 1 — Core metadata =====
 
@@ -102,4 +102,63 @@ test('recommendModel: kembalikan top per case; null bila kosong', () => {
   const rec = recommendModel(models, 'quick', { providerId: 'ep-openrouter' });
   assert.equal(rec.id, 'google/gemini-2.0-flash');
   assert.deepEqual(recommendModel([], 'quick', { providerId: 'ep-openrouter' }), null);
+});
+
+// ===== TASK 4 — Label: formatOptionLabel() + buildRichOptions() =====
+
+// Helper: meta gemini & claude ter-resolve dari kurasi ep-openrouter.
+const metaGemini = resolveModelMeta('google/gemini-2.0-flash', { providerId: 'ep-openrouter' });
+const metaClaude = resolveModelMeta('anthropic/claude-3.5-sonnet', { providerId: 'ep-openrouter' });
+
+test('formatOptionLabel: bintang + context + harga saat direkomendasikan (gemini)', () => {
+  // gemini menang >1 case → tak ada caseLabel; format: ⭐ · 1000K · $0.10/M
+  const label = formatOptionLabel(metaGemini, { isRecommended: true, recommendedFor: ['quick', 'documents', 'vision'] });
+  assert.match(label, /^Gemini 2\.0 Flash \u2b50/);          // diawali displayName + ⭐
+  assert.match(label, / \u00b7 1000K \u00b7 \$0\.10\/M$/);   // · 1000K · $0.10/M (toFixed(2))
+  assert.ok(!label.includes('Hemat'), 'tak ada caseLabel bila >1 case');
+});
+
+test('formatOptionLabel: harga bilangan utuh tanpa desimal (claude input=3 → $3/M)', () => {
+  const label = formatOptionLabel(metaClaude, { isRecommended: true, recommendedFor: ['balanced', 'reasoning'] });
+  assert.match(label, / \u00b7 200K \u00b7 \$3\/M$/);         // $3/M, bukan $3.00/M
+});
+
+test('formatOptionLabel: tanpa rekomendasi → tak ada bintang', () => {
+  const label = formatOptionLabel(metaGemini, { isRecommended: false, recommendedFor: [] });
+  assert.ok(!label.includes('\u2b50'), 'tak bintang');
+  assert.match(label, /^Gemini 2\.0 Flash/);                 // tetap displayName + metadata
+});
+
+test('formatOptionLabel: caseLabel muncul bila unggul tepat SATU case', () => {
+  const label = formatOptionLabel(metaGemini, { isRecommended: true, recommendedFor: ['quick'] });
+  assert.match(label, /\u2b50 \u00b7 Hemat & Cepat/);        // · Hemat & Cepat
+});
+
+test('formatOptionLabel: model unknown → label id saja (graceful)', () => {
+  const metaUnknown = resolveModelMeta('llama-3.3-70b', { providerId: 'ep-electronhub' });
+  const label = formatOptionLabel(metaUnknown, {});
+  assert.equal(label, 'llama-3.3-70b');                      // id polos, tak bintang/metadata
+});
+
+test('buildRichOptions: kembalikan option value-ready {id,label,recommendedFor}', () => {
+  const ranked = rankModels(models, { providerId: 'ep-openrouter' });
+  const ids = models.map((m) => m.id);
+  const opts = buildRichOptions('ep-openrouter', ids, { ranked });
+  assert.equal(opts.length, ids.length);
+  // value option = id model (backward compat), label kaya, recommendedFor terisi.
+  for (const o of opts) {
+    assert.equal(typeof o.id, 'string');
+    assert.equal(o.id, ids.find((x) => x === o.id));         // id valid
+    assert.equal(typeof o.label, 'string');
+    assert.ok(Array.isArray(o.recommendedFor));
+  }
+  const gemini = opts.find((o) => o.id === 'google/gemini-2.0-flash');
+  assert.match(gemini.label, /\u2b50/);                      // gemini punya bintang
+  assert.ok(gemini.recommendedFor.length > 0, 'gemini direkomendasikan');
+});
+
+test('buildRichOptions: value = id (config settings.model lama tetap valid)', () => {
+  const ranked = rankModels(models, { providerId: 'ep-openrouter' });
+  const opts = buildRichOptions('ep-openrouter', ['google/gemini-2.0-flash'], { ranked });
+  assert.equal(opts[0].id, 'google/gemini-2.0-flash');       // value option = id penuh
 });
