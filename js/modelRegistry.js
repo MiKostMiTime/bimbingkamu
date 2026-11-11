@@ -153,3 +153,99 @@ export function resolveModelMeta(id, { providerId = null, defs = PROVIDER_MODEL_
     pricing,
   };
 }
+
+// ===== SCORING — skor per (model, use-case) (spec §6) =====
+// Skor berjalan di atas meta yang SUDAH ter-resolve (input rankModels).
+//   +5  id === recommended[useCase]        (kurasi developer)
+//   +3  meta.useCases INCLUDE useCase       (metadata statik)
+//   'vision'    : +4 bila capabilities includes 'vision'
+//   'documents' : +3 bila capabilities includes 'document'|'large-context'
+//                 + floor(contextWindow/250_000) maks 4
+//   'reasoning' : +3 bila capabilities includes 'reasoning'
+//   'quick'     : +min(3, max(0, round(2.5 - inputPrice)))  (makin murah → lebih tinggi)
+function scoreModel(meta, useCase, recommendedMap = {}) {
+  let score = 0;
+  const caps = meta.capabilities || [];
+  const inputPrice = meta.pricing && typeof meta.pricing.input === 'number' ? meta.pricing.input : Infinity;
+
+  // +5 kurasi: model terpilih sebagai rekomendasi use-case.
+  if (meta.id === recommendedMap[useCase]) score += 5;
+  // +3 metadata statik: model menargetkan use-case ini.
+  if (meta.useCases && meta.useCases.includes(useCase)) score += 3;
+
+  switch (useCase) {
+    case 'vision':
+      if (caps.includes('vision')) score += 4;
+      break;
+    case 'documents':
+      if (caps.includes('document') || caps.includes('large-context')) score += 3;
+      if (typeof meta.contextWindow === 'number') {
+        score += Math.min(Math.floor(meta.contextWindow / 250_000), 4);
+      }
+      break;
+    case 'reasoning':
+      if (caps.includes('reasoning')) score += 3;
+      break;
+    case 'quick':
+      score += Math.min(3, Math.max(0, Math.round(2.5 - inputPrice)));
+      break;
+    default:
+      break;
+  }
+
+  return score;
+}
+
+// ===== RANK MODELS — rekomendasi per use-case (spec §6) =====
+// Input: models = [{ id, meta }] (hanya model TERSEDIA dari listModels).
+// Output: [{ id, meta, recommendedFor: useCaseId[] }] — daftar case yang dimenninya.
+// Per use-case: skor semua model → maxScore = max(0, ...skor); bila >0, tandai
+// semua winner (skor === maxScore). Model tanpa def tetap ikut (heuristik).
+export function rankModels(models, { providerId = null, defs = PROVIDER_MODEL_DEFS, cases = MODEL_USE_CASES } = {}) {
+  if (!Array.isArray(models) || !models.length) return [];
+
+  const recommendedMap = providerId && defs[providerId] ? defs[providerId].recommended : {};
+  // Jejak skor per model per use-case (urutan case = MODEL_USE_CASES).
+  const scores = new Map();
+  models.forEach((m) => scores.set(m.id, {}));
+
+  for (const c of cases) {
+    const caseId = c.id;
+    const perModel = {};
+    for (const m of models) {
+      const s = scoreModel(m.meta, caseId, recommendedMap);
+      perModel[m.id] = s;
+    }
+    const maxScore = Math.max(0, ...Object.values(perModel));
+    if (maxScore > 0) {
+      // Tandai semua winner (tie → semua yang seri).
+      for (const m of models) {
+        if (perModel[m.id] === maxScore) scores.get(m.id)[caseId] = true;
+      }
+    }
+  }
+
+  return models.map((m) => ({
+    id: m.id,
+    meta: m.meta,
+    recommendedFor: cases.filter((c) => scores.get(m.id)[c.id]).map((c) => c.id),
+  }));
+}
+
+// ===== RECOMMEND MODEL — top model untuk SATU use-case (spec §6) =====
+// Output: { id, meta, score } | null (null bila tak ada yang menang / kosong).
+export function recommendModel(models, useCaseId, { providerId = null, defs = PROVIDER_MODEL_DEFS } = {}) {
+  if (!Array.isArray(models) || !models.length) return null;
+  const recommendedMap = providerId && defs[providerId] ? defs[providerId].recommended : {};
+
+  let best = null;
+  let bestScore = 0; // perlu > 0 agar bermakna
+  for (const m of models) {
+    const s = scoreModel(m.meta, useCaseId, recommendedMap);
+    if (s > bestScore) {
+      best = { id: m.id, meta: m.meta, score: s };
+      bestScore = s;
+    }
+  }
+  return best; // null bila tak ada skor > 0
+}
