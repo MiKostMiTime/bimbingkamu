@@ -177,11 +177,17 @@ export async function providerFetch(targetUrl, init = {}, opts = {}) {
   const winnerGate = new Promise((resolve) => { resolveWinner = resolve; });
 
   // Tandai pemenang PERTAMA: jalankan cleanup + hentikan fetch latar belakang.
-  function markWon() {
+  // keepBodySignal: bila jalur LANGSUNG menang dengan Response yang body-nya akan
+  // dibaca pemanggil (listModels/chatCompletion), signal TIDAK dibatalkan agar
+  // res.json()/readSSE() bisa membaca body. Browser/undici mengikat body stream
+  // ke signal fetch → abort di sela header-body membuat body read melempar
+  // AbortError mentah (bug: semua model gagal dimuat). Bila jalur LAIN yang menang
+  // (timer / opaque / threw), direct masih menggantung/terbangun → tetap dibatalkan.
+  function markWon(keepBodySignal = false) {
     if (settled) return false;
     settled = true;
     cleanup();
-    acDirect.abort();
+    if (!keepBodySignal) acDirect.abort();
     return true;
   }
 
@@ -224,7 +230,7 @@ export async function providerFetch(targetUrl, init = {}, opts = {}) {
         return proxyRes;
       }
       logFetch('direct-ok', `status=${res.status} type=${res.type} ok=${res.ok}`);
-      markWon();                         // menang
+      markWon(true);                       // menang → pertahankan signal agar body bisa dibaca pemanggil
       resolveWinner(res);                // buka gate → tak pernah undefined
       return res;
     })
@@ -661,13 +667,13 @@ export function sanitizeModelId(id) {
   return String(id ?? '').replace(/[^A-Za-z0-9._/-]/g, '');
 }
 
-export async function listModels(apiKey, provider) {
+export async function listModels(apiKey, provider, opts = {}) {
   if (!provider || !provider.baseUrl) {
     throw { type: 'badrequest', message: 'Endpoint belum terdaftar. Tambahkan endpoint dulu.' };
   }
   let res;
   try {
-    res = await providerFetch(joinProviderPath(provider.baseUrl, provider.modelsPath), { headers: authHeader(apiKey) });
+    res = await providerFetch(joinProviderPath(provider.baseUrl, provider.modelsPath), { headers: authHeader(apiKey) }, opts);
   } catch {
     // fetch melempar saat offline / jaringan terputus → error network.
     throw { ...mapApiError(0) };
