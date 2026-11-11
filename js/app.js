@@ -7,6 +7,7 @@ import { estimateCost, formatCostIDR, fetchUsdIdr, effectiveUsdIdr, cachedUsdIdr
 import { storage } from './storage.js';
 import { attachModelSearch } from './model-search.js';
 import { resolveProviders, listModels, pickModelIdsForDropdown, providerChat, probeEndpoint, fetchContextLimit, fetchModelPricing, resolveApiKey, addProvider, updateProvider, removeProvider, nextActiveAfterDelete, DEFAULT_PROVIDERS } from './providers.js';
+import { resolveModelMeta, rankModels, buildRichOptions } from './modelRegistry.js';
 import { needsSummarize, splitForSummary, summarySystemPrompt, summaryMessage, buildContentsFrom } from './summarize.js';
 import { retrieveWithScores, joinScoredChunks } from './rag.js';
 import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
@@ -309,8 +310,13 @@ async function refreshProviderModelList() {
       return;
     }
     // Id hanya huruf/angka/titik/tiret (disaring regex di providers.js) → aman
-    // untuk disisipkan ke <option>.
-    dom.model.innerHTML = nextIds.map((id) => `<option value="${id}">${id}</option>`).join('');
+    // untuk disisipkan ke <option>. Registry memberi LABEL KAYA via *overlay* (bukan
+    // rewrite): metadata statik + ranking per use-case → badge ⭐ + harga/context.
+    // value option tetap id model → config settings.model lama tetap valid.
+    const enriched = nextIds.map((id) => ({ id, meta: resolveModelMeta(id, { providerId: provider.id }) }));
+    const ranked = rankModels(enriched, { providerId: provider.id });
+    const options = buildRichOptions(provider.id, nextIds, { ranked });
+    dom.model.innerHTML = options.map((o) => `<option value="${o.id}"${o.recommendedFor.length ? ' data-recommended="1"' : ''}>${o.label}</option>`).join('');
     dom.model.value = nextIds.includes(state.settings.model) ? state.settings.model : nextIds[0];
     state.settings.model = dom.model.value;
     persistSettings();
