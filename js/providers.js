@@ -7,6 +7,7 @@
 // Murni modul (tanpa DOM); error dari fetch dipeta ke mapApiError.
 // =========================================================
 import { mapApiError, extractSources } from './api.js';
+import { getAdapter, resolveAuthHeaders, PROVIDER_DEFS, buildProviderSeed, readSSEAnthropic, normalizeAnthropicText, readStreamChunk } from './adapters.js';
 
 // ===== PROXY & providerFetch (PNA/CORS) =====
 // Masalah: aplikasi dijalankan sebagai halaman HTTPS di Vercel. Bila endpoint
@@ -273,38 +274,16 @@ export const PROVIDERS = {};
 // terdeteksi otomatis (live), OpenAI/Gemini → null (UI tampilkan token tanpa
 // biaya). Id stabil + custom:false → migrateLegacyProviderSettings tidak
 // menyentuh seed.
-export const DEFAULT_PROVIDERS = {
-  'ep-openrouter': {
-    id: 'ep-openrouter',
-    name: 'OpenRouter',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    modelsPath: '/models',
-    chatPath: '/chat/completions',
-    supportsGrounding: true, // websearch → tools pencarian (semua provider bisa)
-    supportsThinking: true,
-    custom: false,
-  },
-  'ep-gemini': {
-    id: 'ep-gemini',
-    name: 'Gemini AI Studio',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    modelsPath: '/models',
-    chatPath: '/chat/completions',
-    supportsGrounding: true, // webSearch → tools google_search
-    supportsThinking: true,
-    custom: false,
-  },
-  'ep-openai': {
-    id: 'ep-openai',
-    name: 'OpenAI',
-    baseUrl: 'https://api.openai.com/v1',
-    modelsPath: '/models',
-    chatPath: '/chat/completions',
-    supportsGrounding: true, // websearch → tools pencarian (semua provider bisa)
-    supportsThinking: true,
-    custom: false,
-  },
-};
+// DEFAULT_PROVIDERS DITURUNKAN dari PROVIDER_DEFS di adapters.js agar konfigurasi
+// provider terpusat (sumber kebenaran) di situ. Shape-nya tetap sama dengan seed
+// connectEndpoint: id + baseUrl wajib, modelsPath/chatPath, supportsGrounding/
+// supportsThinking, custom:false. Field baru: kind (keluarga transport) &
+// contextStrategy ('probe'|'none'). Id stabil + custom:false → migrateLegacyProviderSettings
+// tak menyentuh seed. OpenRouter/Gemini/OpenAI tetap muncul saat peluncuran pertama.
+export const DEFAULT_PROVIDERS = {};
+for (const def of PROVIDER_DEFS) {
+  DEFAULT_PROVIDERS[def.id] = buildProviderSeed(def);
+}
 
 // Registry = seed (DEFAULT_PROVIDERS) + custom dari settings.providers. Seed
 // dimasukkan duluan agar dropdown tidak kosong saat peluncuran pertama;
@@ -319,7 +298,7 @@ export function resolveProviders(custom = []) {
       delete all[p.id];
       continue;
     }
-    if (p.baseUrl) all[p.id] = { ...p, baseUrl: normalizeEndpointUrl(p.baseUrl), custom: true };
+    if (p.baseUrl) all[p.id] = { ...p, baseUrl: normalizeEndpointUrl(p.baseUrl), kind: p.kind || 'oi', custom: true };
   }
   return all;
 }
@@ -492,7 +471,7 @@ function htmlPageError(base) {
 // {base}/v1/models — simpan path yang hidup supaya chat nanti tidak
 // menebak-nebak. Return { baseUrl, modelsPath, chatPath }; gagal keduanya →
 // throw error ramah. Header auth hanya dikirim bila kunci diisi.
-export async function probeEndpoint(baseUrl, apiKey = '') {
+export async function probeEndpoint(baseUrl, apiKey = '', kind = 'oi') {
   const base = normalizeEndpointUrl(baseUrl);
   if (!base) {
     throw { type: 'badrequest', message: 'Masukkan URL endpoint dulu, ya.' };
@@ -515,7 +494,7 @@ export async function probeEndpoint(baseUrl, apiKey = '') {
     for (const modelsPath of candidates) {
       let res;
       try {
-        res = await providerFetch(`${candidateBase}${modelsPath}`, { headers: authHeader(apiKey) });
+        res = await providerFetch(`${candidateBase}${modelsPath}`, { headers: getAdapter(kind).authHeaders(apiKey) });
       } catch {
         // Browser melempar TypeError tanpa detail saat: offline, URL salah,
         // ATAU respons diblokir CORS (server tidak mengirim
@@ -601,10 +580,15 @@ export async function probeEndpoint(baseUrl, apiKey = '') {
 // Bila endpoint bukan LM Studio → return null (UI menampilkan tanda "-").
 export async function fetchContextLimit(provider, apiKey, model) {
   if (!provider || !provider.baseUrl || !model) return null;
+  const adapter = getAdapter(provider.kind);
+  // Provider dengan contextStrategy 'none' (mis. ElectronHub) tak pernah probe
+  // /api/v0/models → langsung kembalikan null (UI tampilkan "-"). Ini menjaga bug
+  // lama: ElectronHub JANGAN pakai /api/v0/models.
+  if (provider.contextStrategy === 'none') return null;
   try {
     // providerFetch → fallback ke /api/proxy bila fetch LANGSUNG gagal (PNA/CORS
     // untuk endpoint remote/ngrok). Tanpa ini, endpoint publik tetap net::ERR_FAILED.
-    const res = await providerFetch(`${provider.baseUrl}/api/v0/models`, { headers: authHeader(apiKey) });
+    const res = await providerFetch(`${provider.baseUrl}/api/v0/models`, { headers: adapter.authHeaders(apiKey) });
     if (!res.ok) return null;
     const data = await res.json();
     const list = Array.isArray(data.data) ? data.data : [];
@@ -649,7 +633,7 @@ export async function fetchModelPricing(provider, apiKey, model) {
 // Deteksi LM Studio: /api/v0/models merespons ok → endpoint lokal.
 async function probeLMStudio(provider, apiKey) {
   try {
-    const res = await providerFetch(`${provider.baseUrl}/api/v0/models`, { headers: authHeader(apiKey) });
+    const res = await providerFetch(`${provider.baseUrl}/api/v0/models`, { headers: resolveAuthHeaders(provider, apiKey) });
     return res.ok;
   } catch {
     return false;
@@ -673,7 +657,7 @@ export async function listModels(apiKey, provider, opts = {}) {
   }
   let res;
   try {
-    res = await providerFetch(joinProviderPath(provider.baseUrl, provider.modelsPath), { headers: authHeader(apiKey) }, opts);
+    res = await providerFetch(joinProviderPath(provider.baseUrl, provider.modelsPath), { headers: resolveAuthHeaders(provider, apiKey) }, opts);
   } catch {
     // fetch melempar saat offline / jaringan terputus → error network.
     throw { ...mapApiError(0) };
@@ -731,6 +715,13 @@ export async function chatCompletion({
 }) {
   if (!provider || !provider.baseUrl) {
     throw { type: 'badrequest', message: 'Pilih endpoint & model dulu, ya.' };
+  }
+  const adapter = getAdapter(provider.kind);
+  // Claude native → jalur khusus (auth x-api-key + anthropic-version, /messages,
+  // streaming content_block_delta, normalisasi content[]). Kontrak output sama
+  // dengan jalur generik: { text, tokens:{prompt,completion,total}, sources }.
+  if (adapter.kind === 'anthropic') {
+    return anthropicChat({ adapter, provider, apiKey, model, systemPrompt, contents, contextMessages, maxTokens, thinkingLevel, grounding, onDelta, signal });
   }
   const messages = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
@@ -867,6 +858,94 @@ export async function chatCompletion({
   return { text: text.trim(), tokens, sources };
 }
 
+// ===== ANTHROPIC / CLAUDE NATIF =====
+// Jalur khusus Claude: auth x-api-key + anthropic-version, POST /messages,
+// streaming SSE (content_block_delta), normalisasi content[]. Kontrak sama
+// dengan chatCompletion generik: { text, tokens:{prompt,completion,total}, sources }.
+export async function anthropicChat({
+  adapter, provider, apiKey, model, systemPrompt, contents, contextMessages,
+  maxTokens = 8192, thinkingLevel, grounding, onDelta, signal,
+}) {
+  if (!provider || !provider.baseUrl) {
+    throw { type: 'badrequest', message: 'Pilih endpoint & model dulu, ya.' };
+  }
+  // Bangun pesan Anthropic: [{ role, content: [{ type:'text', text }] }].
+  const history = (contents || []).map((m) => ({
+    role: m.role === 'model' ? 'assistant' : 'user',
+    content: [{ type: 'text', text: m.text || '' }],
+  }));
+  // Konteks (materi ter-fence) digabung ke pesan user PERTAMA agar tak ada dua
+  // pesan user berurutan; bila tidak ada riwayat, sisipkan sebagai user pertama.
+  const ctx = contextMessages || [];
+  if (ctx.length && history.length && history[0].role === 'user') {
+    const block = ctx.map((c) => c.content).join('\n\n');
+    history[0] = { ...history[0], content: [{ type: 'text', text: `${block}\n\n${history[0].content[0].text}` }] };
+  } else if (ctx.length) {
+    history.unshift({ role: 'user', content: [{ type: 'text', text: ctx.map((c) => c.content).join('\n\n') }] });
+  }
+
+  const body = { model, messages: history, max_tokens: Number(maxTokens) || 8192 };
+  if (systemPrompt) body.system = systemPrompt;
+  if (thinkingLevel) body.thinking = { thinking_bits: Number(thinkingLevel) };
+
+  const wantStream = typeof onDelta === 'function';
+  if (wantStream) body.stream = true;
+
+  let res;
+  try {
+    res = await providerFetch(joinProviderPath(provider.baseUrl, provider.chatPath), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...adapter.authHeaders(apiKey) },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err) {
+    // Pastikan error TIDAK keluar mentah (type undefined → "error API: undefined").
+    if (!err || typeof err.type === 'undefined') {
+      const mapped = mapApiError(0);
+      throw { ...mapped, message: (err && err.message) ? err.message : mapped.message };
+    }
+    throw err;
+  }
+
+  if (!res.ok) {
+    let apiMessage = '';
+    try {
+      const rawText = await res.text();
+      try { const j = JSON.parse(rawText); apiMessage = j.error?.message || ''; } catch {}
+    } catch {}
+    throw { ...mapApiError(res.status, apiMessage) };
+  }
+
+  // Jalur SSE Claude: content_block_delta → delta.text; usage dari message_start/end.
+  if (wantStream && res.body && typeof res.body.getReader === 'function') {
+    const streamed = await readSSEAnthropic(res, onDelta, signal);
+    return {
+      text: streamed.text.trim(),
+      tokens: {
+        prompt: streamed.usage?.input_tokens ?? undefined,
+        completion: streamed.usage?.output_tokens ?? undefined,
+        total: streamed.usage?.total_tokens ?? undefined,
+      },
+      sources: [],
+    };
+  }
+
+  // Jalur non-stream: content = [{ type:'text', text }], usage = { input_tokens, ... }.
+  const data = await res.json();
+  const text = normalizeAnthropicText(data.content);
+  const usage = data.usage || {};
+  return {
+    text: text.trim(),
+    tokens: {
+      prompt: usage.input_tokens ?? undefined,
+      completion: usage.output_tokens ?? undefined,
+      total: usage.total_tokens ?? undefined,
+    },
+    sources: [],
+  };
+}
+
 // Sebagian model (mis. Gemma reasoning di LM Studio, DeepSeek-R1) mengirim
 // jawaban di reasoning_content/reasoning, bukan content. Tanpa fallback ini
 // balasan tampil kosong walau endpoint & format OpenAI-nya benar.
@@ -904,7 +983,7 @@ export async function readSSE(res, onDelta, signal) {
   };
   try {
     for (;;) {
-      const { done, value } = await reader.read();
+      const { done, value } = await readStreamChunk(reader, signal);
       if (done) break;
       buf += dec.decode(value, { stream: true });
       let nl;
