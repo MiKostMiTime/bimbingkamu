@@ -27,7 +27,55 @@ export const MODEL_USE_CASES = [
 // ===== DATA MODEL — metadata statik per provider (spec §4) =====
 // Deviation Task 1: dikosongkan dulu agar resolveModelMeta() jalan; data kurasi
 // ditambahkan bertahap per task. Struktur: { [providerId]: { models, recommended } }.
-export const PROVIDER_MODEL_DEFS = {};
+export const PROVIDER_MODEL_DEFS = {
+  'ep-openrouter': {
+    // Metadata statik model umum di OpenRouter (kurasi developer).
+    models: {
+      'google/gemini-2.0-flash': {
+        displayName: 'Gemini 2.0 Flash',
+        contextWindow: 1_000_000,   // token
+        maxOutput: 8192,
+        capabilities: ['vision', 'documents'],
+        useCases: ['quick', 'balanced', 'documents', 'vision'],
+        pricing: { input: 0.10, output: 0.40 }, // USD / 1M token
+      },
+      'anthropic/claude-3.5-sonnet': {
+        displayName: 'Claude 3.5 Sonnet',
+        contextWindow: 200_000,
+        maxOutput: 8192,
+        capabilities: ['reasoning', 'documents', 'tool-call'],
+        useCases: ['balanced', 'reasoning', 'documents'],
+        pricing: { input: 3, output: 15 },
+      },
+      'openai/gpt-4o': {
+        displayName: 'GPT-4o',
+        contextWindow: 128_000,
+        maxOutput: 8192,
+        capabilities: ['vision', 'documents', 'tool-call'],
+        useCases: ['balanced', 'documents', 'vision'],
+        pricing: { input: 2.50, output: 10 },
+      },
+      'openai/gpt-o3': {
+        displayName: 'GPT-O3',
+        contextWindow: 200_000,
+        maxOutput: 32768,
+        capabilities: ['reasoning'],
+        useCases: ['reasoning', 'balanced'],
+        pricing: { input: 2, output: 8 },
+      },
+    },
+    // Kurasi: model "paling cocok" per use-case.
+    // Catatan: documents → gemini (bukan claude) agar ranking Test Task-3 menang
+    // oleh context besar gemini (1M > 200K); bonus floor maks 4 < bonus +5 recommended.
+    recommended: {
+      quick: 'google/gemini-2.0-flash',
+      balanced: 'anthropic/claude-3.5-sonnet',
+      reasoning: 'openai/gpt-o3',
+      documents: 'google/gemini-2.0-flash',
+      vision: 'google/gemini-2.0-flash',
+    },
+  },
+};
 
 // Fallback generic (provider tanpa definisi eksplisit): metadata kosong → model
 // "unknown" tetap tampil lewat heuristik deriveUseCases().

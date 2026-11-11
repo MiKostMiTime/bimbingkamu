@@ -7,7 +7,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveModelMeta, deriveUseCases, MODEL_USE_CASES } from '../js/modelRegistry.js';
+import { resolveModelMeta, deriveUseCases, MODEL_USE_CASES, PROVIDER_MODEL_DEFS } from '../js/modelRegistry.js';
 
 // ===== TASK 1 — Core metadata =====
 
@@ -35,4 +35,20 @@ test('deriveUseCases: vision + context besar → dokumen & cepat', () => {
   assert.ok(cases.includes('vision'), 'cap vision → vision');
   assert.ok(cases.includes('documents'), 'context ≥ 131072 → documents');
   assert.ok(cases.includes('quick'), 'input ≤ 1 → quick');
+});
+
+// ===== TASK 2 — Curated data: PROVIDER_MODEL_DEFS (ep-openrouter) =====
+
+test('PROVIDER_MODEL_DEFS: ep-openrouter gemini metadata kurasi', () => {
+  const g = PROVIDER_MODEL_DEFS['ep-openrouter'].models['google/gemini-2.0-flash'];
+  assert.equal(g.displayName, 'Gemini 2.0 Flash');
+  assert.equal(g.contextWindow, 1000000);
+  assert.equal(g.pricing.input, 0.10);
+});
+
+test('resolveModelMeta: gemini via ep-openrouter → useCases + capabilities', () => {
+  const meta = resolveModelMeta('google/gemini-2.0-flash', { providerId: 'ep-openrouter' });
+  assert.ok(meta.useCases.includes('quick'), 'useCases ada quick');
+  assert.ok(meta.useCases.includes('vision'), 'useCases ada vision');
+  assert.ok(meta.capabilities.includes('vision'), 'capabilities ada vision');
 });
