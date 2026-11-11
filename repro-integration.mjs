@@ -22,6 +22,14 @@ const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
   const path = u.pathname;
   if (path === '/api/proxy') { proxyHandler(req, res).catch((e) => { try { if (!res.headersSent) res.writeHead(500); } catch {} }); return; }
+  // Backend model list untuk endpoint ngrok. TIDAK mengirim header CORS agar
+  // jalur LANGSUNG di browser tetap diblokir (PNA/CORS) → memaksa fallback ke
+  // /api/proxy (server-side fetch), yaitu jalur PNA yang benar-benar diuji.
+  if (path === '/models' || path === '/v1/models') {
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ data: [{ id: 'ng-model', capabilities: [] }] }));
+    return;
+  }
   if (path === '/page') {
     res.writeHead(200, { 'content-type': 'text/html' });
     res.end(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Int</title>
@@ -48,7 +56,7 @@ const server = http.createServer(async (req, res) => {
     </script></body></html>`);
   }
   // serve real modules
-  const map = { '/js/providers.js': 'js/providers.js', '/js/api.js': 'js/api.js' };
+  const map = { '/js/providers.js': 'js/providers.js', '/js/api.js': 'js/api.js', '/js/adapters.js': 'js/adapters.js' };
   if (map[path]) {
     try {
       const body = await read(map[path]);
@@ -59,8 +67,10 @@ const server = http.createServer(async (req, res) => {
   }
   if (!res.headersSent) res.writeHead(404); res.end();
 });
-await new Promise((r) => server.listen(0, '127.0.0.1', r));
-const BASE = `http://127.0.0.1:${server.address().port}`;
+// PORT TETAP agar tunnel ngrok bisa menargetkan server lokal ini.
+const LOCAL_PORT = 8791;
+await new Promise((r) => server.listen(LOCAL_PORT, '127.0.0.1', r));
+const BASE = `http://127.0.0.1:${LOCAL_PORT}`;
 
 const browser = await chromium.launch({ executablePath: CHROME_EXE, headless: false, args: ['--no-sandbox','--disable-dev-shm-usage'] });
 const context = await browser.newContext();

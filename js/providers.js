@@ -150,10 +150,23 @@ export async function providerFetch(targetUrl, init = {}, opts = {}) {
   // Base URL lama yang tersimpan tanpa skema harus tetap bisa dipakai; tanpa
   // ini fetch memperlakukannya sebagai path relatif ke aplikasi.
   if (typeof targetUrl === 'string') targetUrl = normalizeEndpointUrl(targetUrl);
-  const callerSignal = init.signal || null;
+  // AREA 5: signal pemanggil bisa lewat init (chat/streaming via buildChatRequest)
+  // ATAU opts (listModels → refreshProviderModelList). Kedua-nya hormati agar
+  // pembatalan (refresh endpoint beruntun / tombol Berhenti) sampai ke fetch.
+  const callerSignal = init.signal || opts.signal || null;
   const acDirect = new AbortController();
   // Timeout jalur langsung bisa diganti per-panggilan (utk uji); default 12s.
   const DIRECT_TIMEOUT_MS = opts.timeoutMs ?? DEFAULT_DIRECT_TIMEOUT_MS;
+
+  // RC4: target lokal/private (loopback / LAN) TIDAK pernah diteruskan ke proksi
+  // cloud Vercel — proksi tak jangkau localhost/IP-private pengguna, jadi fallback
+  // proksi hanya memberi error misleading / retry cloud diam-diam. Lokal lewat jalur
+  // LANGSUNG saja (header bypass tunnel tetap dipakai bila host ngrok/localtunnel).
+  // Deteksi dari host target; isLocalTarget dipakai toProxy() untuk membatalkan
+  // fallback proksi.
+  const isLocalTarget = (() => {
+    try { return isLocalHost(new URL(targetUrl).hostname); } catch { return false; }
+  })();
 
   // Cermin pembatalan pemanggil (tombol Berhenti) ke controller langsung.
   function onCallerAbort() {
@@ -197,6 +210,13 @@ export async function providerFetch(targetUrl, init = {}, opts = {}) {
   // jadi titik tunggal untuk mencatat viaProxy → dipakai cascade retry agar tak
   // re-race direct→proxy berulang di endpoint remote.
   async function toProxy() {
+    // RC4: lokal/LAN tak pernah ke proksi cloud. Lempar agar branch opaque /
+    // threw / timeout jatuh ke error jaringan (bukan retry cloud yang misleading).
+    // probeEndpoint() mengubahnya menjadi panduan lokal yang actionable.
+    if (isLocalTarget) {
+      logFetch('local-skip-proxy', `target lokal → proksi cloud diabaikan`);
+      throw { type: 'network', message: 'Jaringan langsung ke endpoint lokal gagal.' };
+    }
     if (typeof opts.onViaProxy === 'function') opts.onViaProxy();
     logFetch('proxy', `→ ${targetUrl}`);
     try {
@@ -301,6 +321,29 @@ export function resolveProviders(custom = []) {
     if (p.baseUrl) all[p.id] = { ...p, baseUrl: normalizeEndpointUrl(p.baseUrl), kind: p.kind || 'oi', custom: true };
   }
   return all;
+}
+
+// ===== AREA 2 (RC2): TEBAK kind + contextStrategy DARI BASE URL =====
+// Saat pengguna MENAMBAK endpoint baru, provider yang disimpan harus membawa
+// `kind` (keluarga transport: 'oi' | 'anthropic') + `contextStrategy` agar
+// adapter + strategi konteks benar. Tanpa ini, endpoint Anthropic (api.anthropic.com)
+// dipaksa jadi 'oi' → header auth salah (Bearer vs x-api-key) + probe path salah.
+// Pencocokan berdasarkan HOSTNAME terhadap PROVIDER_DEFS; default 'oi' + 'probe'.
+export function inferProviderKindAndStrategy(baseUrl = '') {
+  const base = normalizeEndpointUrl(baseUrl);
+  let baseHost = '';
+  try { baseHost = new URL(base).hostname.toLowerCase(); } catch { baseHost = ''; }
+  if (baseHost) {
+    for (const def of PROVIDER_DEFS) {
+      try {
+        const seedHost = new URL(def.baseUrl).hostname.toLowerCase();
+        if (seedHost === baseHost) {
+          return { kind: def.kind, contextStrategy: def.contextStrategy || 'probe' };
+        }
+      } catch {}
+    }
+  }
+  return { kind: 'oi', contextStrategy: 'probe' };
 }
 
 // ===== CRUD PROVIDER CUSTOM (murni, array → array) =====
@@ -542,7 +585,7 @@ export async function probeEndpoint(baseUrl, apiKey = '', kind = 'oi') {
         };
         continue;
       }
-      lastErr = { ...mapApiError(res.status, bodyText.slice(0, 800)) };
+      lastErr = { ...mapApiError(res.status, bodyText.slice(0, 800), bodyText) };
     }
     // Hanya coba api.<domain> bila SEMUA kandidat di host asli membalas HTML
     // (artinya host itu halaman aplikasi, bukan API). Bila ada respons API
@@ -663,9 +706,16 @@ export async function listModels(apiKey, provider, opts = {}) {
     throw { ...mapApiError(0) };
   }
   if (!res.ok) {
+    // Baca body mentah SEKALI: (a) .error.message untuk pesan, (b) rawText utuh
+    // untuk deteksi WAF/Cloudflare (HTML "Attention Required!") di mapApiError.
+    // Tanpa rawText, 403 halaman Cloudflare dilaporkan sebagai "kunci API invalid".
     let apiMessage = '';
-    try { apiMessage = (await res.json()).error?.message || ''; } catch {}
-    throw { ...mapApiError(res.status, apiMessage) };
+    let rawText = '';
+    try {
+      rawText = await res.text();
+      try { const j = JSON.parse(rawText); apiMessage = j.error?.message || ''; } catch {}
+    } catch {}
+    throw { ...mapApiError(res.status, apiMessage, rawText) };
   }
   const data = await res.json();
   const list = data.data || [];
@@ -817,7 +867,7 @@ export async function chatCompletion({
         try { apiMessage = (await res.json()).error?.message || apiMessage; } catch {}
       }
     }
-    if (!res.ok) throw { ...mapApiError(res.status, apiMessage) };
+    if (!res.ok) throw { ...mapApiError(res.status, apiMessage, rawText) };
   }
 
   // Jalur SSE: baca data: {...} per chunk, akumulasi delta.content,
@@ -914,7 +964,7 @@ export async function anthropicChat({
       const rawText = await res.text();
       try { const j = JSON.parse(rawText); apiMessage = j.error?.message || ''; } catch {}
     } catch {}
-    throw { ...mapApiError(res.status, apiMessage) };
+    throw { ...mapApiError(res.status, apiMessage, rawText) };
   }
 
   // Jalur SSE Claude: content_block_delta → delta.text; usage dari message_start/end.

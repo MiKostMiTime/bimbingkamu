@@ -20,6 +20,8 @@ const MESSAGES = {
   toobig: 'Materi atau riwayat percakapan terlalu besar untuk dikirim ke endpoint. Kurangi ukuran materi (hasil upload) atau ringkas percakapan, lalu coba lagi.',
   truncated: 'Jawaban terpotong karena terlalu panjang. Minta tutor melanjutkan.',
   blocked: 'Endpoint memblokir akses dari server Vercel (Cloudflare 403 "Attention Required! / You have been blocked"). Ini BUKAN masalah kunci API — endpoint belakang proteksi bot Cloudflare yang memblokir IP datacenter Vercel/AWS. Hubungi pemilik endpoint untuk memasukkan IP Vercel (54.175.0.0/16) ke allowlist Cloudflare, atau matikan "Attention Required!" bot challenge di path API.',
+  permission: 'Endpoint menolak akses karena model belum diaktifkan atau scope kunci kurang (bukan sekadar kunci salah). Aktifkan model & beri permission yang diperlukan di dashboard provider, lalu tempel kembali kuncinya.',
+  deployment: 'Endpoint sedang dalam proses deployment / pembaruan (menyiapkan model). Tunggu beberapa saat lalu coba lagi; bila terus muncul, periksa status layanan provider.',
 };
 
 // Pola untuk memperhalus klasifikasi dari teks error API (lebih akurat
@@ -59,7 +61,27 @@ export function mapApiError(status, apiMessage = '', rawText = '') {
   if (AUTH_RE.test(apiMessage)) return { type: 'auth', message: MESSAGES.auth, ...detail };
 
   // 2) Klasifikasi berdasarkan status HTTP.
-  if (status === 401 || status === 403) {
+  if (status === 401) {
+    return { type: 'auth', message: MESSAGES.auth, ...detail };
+  }
+  // 403 = banyak sebab: auth / permission / billing / deployment / WAF bot.
+  // Jangan lagi diseragamkan jadi "kunci API invalid" (RC3): urai dari teks pesan
+  // + body mentah agar panduan yang muncul sesuai penyebab sebenarnya.
+  if (status === 403) {
+    if (/permission|insufficient access|not enabled|enable .*model|role ?required/i.test(apiMessage)) {
+      return { type: 'permission', message: MESSAGES.permission, ...detail };
+    }
+    if (/deploy|provisioning|updating|loading model|coming back|warming up/i.test(apiMessage)) {
+      return { type: 'deployment', message: MESSAGES.deployment, ...detail };
+    }
+    if (/credit|billing|payment|paid|subscription|upgrade/i.test(apiMessage)) {
+      return { type: 'payment', message: MESSAGES.payment, ...detail };
+    }
+    // WAF fallback (body HTML "Attention Required" bila step-0 belum terdeteksi).
+    const blockText = String(rawText || '');
+    if (blockText && /attention required|blocked|just a moment|checking your browser/i.test(blockText)) {
+      return { type: 'blocked', message: MESSAGES.blocked, ...detail };
+    }
     return { type: 'auth', message: MESSAGES.auth, ...detail };
   }
   // 402 = pembayaran/kredit belum siap (mis. OpenRouter kehabisan kredit).

@@ -2,11 +2,11 @@
 // BimbingKamu — APP
 // Entry point: inisialisasi modul, state sesi, event binding.
 // =========================================================
-import { STORAGE_KEYS, getLevelLabel, migrateLegacyProviderSettings } from './config.js';
+import { STORAGE_KEYS, getLevelLabel, migrateLegacyProviderSettings, migrateLegacyConfig } from './config.js';
 import { estimateCost, formatCostIDR, fetchUsdIdr, effectiveUsdIdr, cachedUsdIdr } from './pricing.js';
 import { storage } from './storage.js';
 import { attachModelSearch } from './model-search.js';
-import { resolveProviders, listModels, pickModelIdsForDropdown, providerChat, probeEndpoint, fetchContextLimit, fetchModelPricing, resolveApiKey, addProvider, updateProvider, removeProvider, nextActiveAfterDelete, DEFAULT_PROVIDERS } from './providers.js';
+import { resolveProviders, listModels, pickModelIdsForDropdown, providerChat, probeEndpoint, fetchContextLimit, fetchModelPricing, resolveApiKey, addProvider, updateProvider, removeProvider, nextActiveAfterDelete, inferProviderKindAndStrategy, DEFAULT_PROVIDERS } from './providers.js';
 import { resolveModelMeta, rankModels, buildRichOptions } from './modelRegistry.js';
 import { needsSummarize, splitForSummary, summarySystemPrompt, summaryMessage, buildContentsFrom } from './summarize.js';
 import { retrieveWithScores, joinScoredChunks } from './rag.js';
@@ -128,15 +128,27 @@ const DEFAULT_SETTINGS = { mode: 'konsep', level: 3, model: '', webSearch: true,
 
 // Bersihkan jejak data lama (provider 'gemini', model gemini-*) agar
 // onboarding endpoint muncul lagi. Riwayat chat tidak disentuh.
+// Plus: pindahkan kunci API global lama ke provider yang sebelumnya aktif
+// (RC1) — SATU KALI, lalu hapus penopang global-nya.
 function loadSettings() {
-  return migrateLegacyProviderSettings({ ...DEFAULT_SETTINGS, ...storage.get(STORAGE_KEYS.settings, {}) });
+  const raw = { ...DEFAULT_SETTINGS, ...storage.get(STORAGE_KEYS.settings, {}) };
+  const legacyKey = storage.get(STORAGE_KEYS.apiKey, '');
+  const migrated = migrateLegacyConfig(raw, legacyKey, DEFAULT_PROVIDERS);
+  if (migrated.migrated) {
+    // Simpan endpoint ter-migrasi + arahkan ke endpoint aktif. Tulis langsung
+    // ke storage (bukan persistSettings) karena loadSettings() jalan saat
+    // state masih dalam proses inisialisasi (const state belum terikat / TDZ).
+    storage.set(STORAGE_KEYS.settings, migrated);
+    storage.remove(STORAGE_KEYS.apiKey); // hapus penopang kunci global (RC1)
+  }
+  return migrated;
 }
 
 const state = {
   contextLimit: null, // context window model aktif (dari LM Studio /api/v0) — null bila tak diketahui
   pricing: null, // { input, output, source } per 1M token USD — dari endpoint / input user
   usdIdr: null, // kurs live (cache) — null bila belum tersedia
-  apiKey: storage.get(STORAGE_KEYS.apiKey, ''), // kunci umum (fallback bila endpoint tak punya kunci sendiri)
+  apiKey: storage.get(STORAGE_KEYS.apiKey, ''), // kunci umum global — dipindahkan ke per-endpoint saat loadSettings (RC1); fallback dihapus
   materiFiles: [], // file sesi AKTIF { name, chars, text } — per chat, bukan global
   settings: loadSettings(),
   sessions: [], // riwayat: [{ id, title, createdAt, updatedAt, startedAt, messages }]
@@ -176,8 +188,30 @@ function errorDisplayText(err) {
   return err.message;
 }
 
+// Catatan: rawText (body mentah endpoint) kini ikut mengalir ke sini. Body chat
+// bisa berisi kunci API / header Authorization bila caller melempar objek request
+// utuh. Redaksi agar kunci tak bocor ke console.log production.
+function redactLogPayload(err) {
+  if (!err || typeof err !== 'object') return err;
+  const clone = { ...err };
+  for (const key of ['apiKey', 'authorization', 'Authorization', 'body', 'rawText']) {
+    if (typeof clone[key] === 'string' && clone[key].length > 0) {
+      // Kunci API biasanya diawali skema (sk-/, sk-or-/, Bearer ...) → tandai.
+      clone[key] = '[REDACTED]';
+    }
+  }
+  return clone;
+}
+
 function logApiError(err) {
-  console.error('[BimbingKamu] error API:', err.type, err.status || '', err.apiMessage || '');
+  const payload = redactLogPayload(err);
+  console.error(
+    '[BimbingKamu] error API:',
+    payload.type || '',
+    payload.status || '',
+    payload.apiMessage || '',
+    payload.message || '',
+  );
 }
 
 // ===== DAFTAR MODEL (REFRESH OTOMATIS) =====
@@ -207,11 +241,11 @@ function renderModelWebSearch(built, m) {
   });
 }
 
-// Kunci aktif: kunci khusus endpoint menang; bila kosong → fallback kunci umum
-// (legacy); bila tak ada apa-apa → ''. Endpoint lokal tanpa auth tetap ''
+// Kunci aktif: kunci khusus endpoint menang; bila kosong → '' (TANPA fallback
+// kunci umum global — RC1). Endpoint lokal tanpa auth tetap ''
 // (request tanpa header Authorization).
 function activeApiKey() {
-  return resolveApiKey(currentProviders(), state.settings.provider, state.apiKey);
+  return resolveApiKey(currentProviders(), state.settings.provider);
 }
 
 // Guard gabungan: endpoint + model harus terpilih sebelum chat.
@@ -282,6 +316,14 @@ function togglePanelLoading(panelId, on) {
   if (panel) panel.classList.toggle('panel--loading', on);
 }
 
+// ===== AREA 5 (RC5): PENANDA + PEMBATALAN REFRESH DAFTAR MODEL =====
+// Penanda urut (seq) + AbortController untuk refresh daftar model. Dipakai agar
+// switch/tambah/hapus endpoint CEPAT (race) tak menampilkan daftar model STALE
+// dari endpoint sebelumnya: refresh terakhir menang, fetch lama dibatalkan &
+// hasilnya dibuang, dropdown dikosongkan SEGERA sebelum fetch dimulai.
+let modelRefreshSeq = 0;
+let modelRefreshCtl = null;
+
 // ===== DAFTAR MODEL PER ENDPOINT =====
 // Ambil daftar id model dari endpoint terpilih (listModels), lalu isi dropdown
 // model. Gagal → tandai status koneksi error. Saat memuat, panel diberi indikator.
@@ -290,16 +332,21 @@ async function refreshProviderModelList() {
   if (!state.settings.provider) return;
   const provider = currentProviders()[state.settings.provider];
   if (!provider) return;
-  // Reset + simpan API pencarian manual SETIAP daftar model disegarkan (switch
-  // / tambah / hapus endpoint). Dijalankan lebih dulu dari listModels agar switch
-  // endpoint SELALU mulai dari pencarian kosong — meski listModel di bawah
-  // gagal/throw, filter tetap bersih (kunci: search berlaku untuk SETIAP
-  // endpoint, bukan hanya yang pemuatan sukses).
+  // AREA 5: tandai refresh ini + batalkan fetch dari refresh SEBELUMNYA (yang mungkin
+  // masih berjalan). Tangkap id-nya agar hasil fetch lama TIDAK menimpa yang baru.
+  const mySeq = ++modelRefreshSeq;
+  modelRefreshCtl?.abort();
+  const ctl = new AbortController();
+  modelRefreshCtl = ctl;
+  // AREA 5: CLEAR STALE SEGERA — kosongkan dropdown + badge pencarian LANGSUNG sebelum
+  // fetch, agar dropdown tak menampilkan model endpoint SEBELUMNYA saat menunggu.
   const searchApi = attachModelSearch(dom.model);
-  searchApi.reset();
+  resetModelDropdown(searchApi);
   togglePanelLoading('panelProvider', true);
   try {
-    const ids = await listModels(activeApiKey(), provider);
+    const ids = await listModels(activeApiKey(), provider, { signal: ctl.signal });
+    // AREA 5: bila refresh BARU sudah mulai saat fetch ini selesai → buang hasilnya.
+    if (mySeq !== modelRefreshSeq) return;
     // Endpoint baru → daftar model BARU. Bila kosong/gagal → [] → dropdown
     // dikosongkan (resetModelDropdown), BUKAN mempertahankan model endpoint
     // sebelumnya (menyebabkan daftar "stale").
@@ -340,13 +387,18 @@ async function refreshProviderModelList() {
       if (r) { state.usdIdr = r; renderTokenStat(); }
     });
   } catch (err) {
-    // Gagal (network/mixed-content/offline) → kosongkan dropdown agar tak tampil
+    // AREA 5: refresh BARU sudah mengosongkan dropdown-nya; buang hasil fetch lama.
+    if (mySeq !== modelRefreshSeq) return;
+    // Gagal (network/mixed-content/offline/abort) → kosongkan dropdown agar tak tampil
     // model endpoint SEBELUMNYA yang stale.
     resetModelDropdown(searchApi);
     updateConnStatus('error');
     console.warn('[BimbingKamu] gagal memuang daftar model endpoint:', err && err.message);
   } finally {
-    togglePanelLoading('panelProvider', false);
+    // AREA 5: hanya matikan loading bila refresh ini masih yang terakhir. Bila sudah
+    // digantikan, panggilannya yang baru mengatur indikator loading-nya sendiri agar
+    // tak padat lebih dulu saat refresh terbaru masih memuat.
+    if (mySeq === modelRefreshSeq) togglePanelLoading('panelProvider', false);
   }
 }
 
@@ -379,8 +431,17 @@ function renderProviderOptions() {
 async function connectEndpoint({ baseUrl, name, key, providerId }) {
   let modelsPath, chatPath, resolvedBaseUrl;
   togglePanelLoading('panelProvider', true);
+  // Pertahankan kapabilitas seed (Gemini grounding, thinking) saat disunting.
+  const existing = providerId ? currentProviders()[providerId] : null;
+  // AREA 2 (RC2): kind + contextStrategy. Mode edit → pertahankan dari registry
+  // (sudah benar); mode tambah → tebak dari hostname base URL (seed bawaan),
+  // default 'oi' + 'probe'. Dipakai untuk probeEndpoint (header auth + path) DAN
+  // disimpan ke provider agar adapter + strategi konteks persist.
+  const inferred = inferProviderKindAndStrategy(baseUrl);
+  const kind = (existing && existing.kind) || inferred.kind;
+  const contextStrategy = (existing && existing.contextStrategy) || inferred.contextStrategy;
   try {
-    const probe = await probeEndpoint(baseUrl, key);
+    const probe = await probeEndpoint(baseUrl, key, kind);
     modelsPath = probe.modelsPath;
     chatPath = probe.chatPath;
     resolvedBaseUrl = probe.baseUrl;
@@ -390,8 +451,6 @@ async function connectEndpoint({ baseUrl, name, key, providerId }) {
   const host = resolvedBaseUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
   // Mode edit: pakai id endpoint lama; mode tambah: buat id baru.
   const id = providerId || 'ep-' + Math.random().toString(36).slice(2, 7);
-  // Pertahankan kapabilitas seed (Gemini grounding, thinking) saat disunting.
-  const existing = providerId ? currentProviders()[providerId] : null;
   const provider = {
     id,
     name: name || (existing && existing.name) || host || resolvedBaseUrl,
@@ -399,6 +458,8 @@ async function connectEndpoint({ baseUrl, name, key, providerId }) {
     modelsPath,
     chatPath,
     key: key || '',
+    kind,                          // AREA 2: keluarga transport persist → adapter benar
+    contextStrategy,               // AREA 2: strategi konteks persist (mis. 'none')
     supportsGrounding: Boolean(existing && existing.supportsGrounding),
     supportsThinking: Boolean(existing && existing.supportsThinking),
     custom: true,
@@ -1639,7 +1700,7 @@ function saveWebMateri(sources) {
 function updateLevelLabel() {
   const level = Number(dom.level.value);
   dom.levelValue.textContent = String(level);
-  dom.levelDesc.textContent = getLevelLabel(level);
+  if (dom.levelDesc) dom.levelDesc.textContent = getLevelLabel(level);
 }
 
 // ===== HITUNG BIAYA =====
@@ -2304,4 +2365,4 @@ if (typeof document !== 'undefined') init();
 // objek sesi yang dipakai seluruh modul. renderSessionList / exportSession =
 // ekspos UI riwayat + ekspor untuk uji integrasi. Hanya tambahan export, tidak
 // mengubah aplikasi di browser.
-export { generateGreeting, sendUserMessage, state, renderSessionList, exportSession };
+export { generateGreeting, sendUserMessage, state, renderSessionList, exportSession, refreshProviderModelList, dom };
