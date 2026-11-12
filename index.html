@@ -307,7 +307,7 @@
             aria-label="File materi untuk sesi ini"
             hidden
           ></ul>
-          <div class="panel__footer">
+          <div class="materi-input">
             <div
               id="materiDrop"
               class="dropzone"
@@ -315,14 +315,19 @@
               tabindex="0"
               aria-label="Muat file materi untuk sesi ini: tarik ke sini atau klik"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
-              </svg>
-              <span>Tarik file ke sini, atau klik (.txt / .md / .pdf / .docx, maks. 5 MB), tersimpan per sesi</span>
+              <span class="dropzone__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+                </svg>
+              </span>
+              <span class="dropzone__body">
+                <span class="dropzone__title">Tarik file ke sini, atau klik</span>
+                <span class="dropzone__meta">.txt / .md / .pdf / .docx, maks. 5 MB</span>
+              </span>
               <input id="materiFile" type="file" accept=".txt,.md,.pdf,.docx" hidden />
             </div>
             <div class="url-materi">
-              <label class="url-materi__label" for="materiUrl">Atau ambil dari alamat website</label>
+              <label class="url-materi__label" for="materiUrl">Atau tempel alamat website</label>
               <div class="url-materi__row">
                 <input
                   id="materiUrl"
@@ -331,12 +336,13 @@
                   inputmode="url"
                   autocomplete="off"
                   placeholder="https://contoh.com/artikel"
+                  aria-describedby="materiUrlHint"
                 />
                 <button id="materiUrlBtn" class="btn btn--secondary" type="button">Ambil</button>
               </div>
-              <p class="field__hint">
-                Isi halaman dibaca jadi teks materi sesi. Halaman yang butuh
-                login atau dimuat dengan JavaScript mungkin tidak terbaca.
+              <p class="field__hint" id="materiUrlHint">
+                Halaman dibaca jadi teks materi sesi. Halaman yang butuh login
+                atau dimuat dengan JavaScript mungkin tidak terbaca.
               </p>
             </div>
           </div>
