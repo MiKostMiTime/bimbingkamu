@@ -41,6 +41,27 @@ Aplikasi ini sepenuhnya statis, dengan tiga Pages Function di `functions/api/`: 
 
 Pastikan path relatif tetap utuh (struktur folder `css/`, `js/`, `assets/` tidak boleh diubah). Untuk uji lokal dengan Pages Function: `TAVILY_API_KEY=... npx wrangler pages dev .`.
 
+### Jika build gagal dengan `wrangler deploy`
+
+Log seperti ini berarti repository terhubung sebagai **Worker** (Workers Builds), bukan project Pages:
+
+> This project has a `functions` directory and static files in its root... Automatic configuration cannot migrate Pages Functions to Workers yet.
+
+Repo ini memakai **Pages Functions** (`functions/api/`), jadi harus di-deploy sebagai project Pages:
+
+1. Di **Workers & Pages**, pilih **Create** lalu tab **Pages** (jangan pilih Worker), dan hubungkan repo ini.
+2. Framework preset: **None**; Build command: `npm run build`; Build output directory: `/` (root repo).
+3. Setelah deploy pertama berhasil, tambahkan secret `TAVILY_API_KEY` di **Settings → Variables and Secrets**.
+
+Jangan mengganti Build command menjadi `wrangler deploy`: perintah itu untuk Worker dan tidak mengenali folder `functions/`. Project Worker yang gagal itu bisa dihapus agar tidak tertukar.
+
+Alternatif tanpa build CI, langsung dari komputer:
+
+```bash
+npx wrangler login
+npx wrangler pages deploy . --project-name bimbingkamu
+```
+
 ## Daftar fitur
 
 - **BYOK** — masukkan kunci API *provider* (opsional; endpoint lokal tak butuh) dengan toggle lihat/sembunyikan, tersimpan otomatis di `localStorage`, indikator privasi, dan tombol hapus semua data.
