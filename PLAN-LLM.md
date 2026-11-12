@@ -1,5 +1,7 @@
 # Rencana Perubahan Sistem LLM — BimbingKamu
 
+> **Catatan historis:** dokumen ini ditulis saat deploy masih di Vercel. Deploy kini di Cloudflare Pages — lihat README.md.
+
 Prioritas: **stabilitas & kualitas belajar > jumlah model**. Modular, aman, hemat biaya, multi-provider.
 Metodologi: audit → rencana → implementasi bertahap (+ test + build tiap fase) → laporan. Kompatibilitas konfigurasi lama dipertahankan.
 

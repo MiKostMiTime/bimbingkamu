@@ -32,7 +32,13 @@ Bila belum punya endpoint, pilih salah satu provider bawaan di panel **Endpoint 
 
 ## Men-deploy
 
-Aplikasi ini sepenuhnya statis. Upload seluruh isi folder ke hosting statis mana pun: GitHub Pages, Netlify, Vercel, Cloudflare Pages. Pastikan path relatif tetap utuh (struktur folder `css/`, `js/`, `assets/` tidak boleh diubah).
+Aplikasi ini sepenuhnya statis, dengan satu Pages Function (`functions/api/proxy.js`) untuk proksi endpoint provider. Deploy lewat **Cloudflare Pages**:
+
+1. Hubungkan repository ini di dashboard Cloudflare Pages.
+2. Build command: `npm run build` (opsional — bundle sudah di-commit). Output directory: `/` (root repo).
+3. `functions/` dideteksi otomatis sebagai Pages Functions; `_headers` dan `_redirects` di root dipakai sebagai konfigurasi cache/keamanan dan SPA fallback.
+
+Pastikan path relatif tetap utuh (struktur folder `css/`, `js/`, `assets/` tidak boleh diubah). Untuk uji lokal dengan Pages Function: `npx wrangler pages dev .`.
 
 ## Daftar fitur
 

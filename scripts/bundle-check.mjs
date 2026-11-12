@@ -1,11 +1,11 @@
 // =========================================================
 // BimbingKamu — PREDEPLOY (hook staleness bundle)
-// Vercel men-deploy js/app.bundle.js yang DI-COMMIT (bukan source).
+// Deploy memakai js/app.bundle.js yang DI-COMMIT (bukan source).
 // Bila developer ubah source (js/*.js, css/*) tapi lupa rebuild+commit,
 // bundle tua tayang tanpa error. Hook ini mendeteksi & mencegah itu:
 //
-//   npm run predeploy     -> build ulang + verifikasi freshness
-//   node scripts/predeploy.mjs --check  -> cek saja (tanpa build)
+//   npm run check:bundle  -> build ulang + verifikasi freshness
+//   npm run check         -> cek saja (tanpa build)
 //
 // Logika: bundle STALE bila ada source yang mtime-nya BARU dari output
 // build (max(mtime source) > min(mtime output)). Exit 1 bila stale agar
@@ -96,35 +96,35 @@ async function main(argv) {
   const staleBefore = isBundleStale(sources, outputs);
 
   if (staleBefore) {
-    console.log('[predeploy] PERINGATAN: bundle STALE vs source (source lebih baru dari output build).');
+    console.log('[bundle-check] PERINGATAN: bundle STALE vs source (source lebih baru dari output build).');
   } else {
-    console.log('[predeploy] bundle searah dengan source.');
+    console.log('[bundle-check] bundle searah dengan source.');
   }
 
   if (!checkOnly) {
-    console.log('[predeploy] rebuild bundle + css...');
+    console.log('[bundle-check] rebuild bundle + css...');
     await runBuild(ROOT);
   }
 
   // Verifikasi ulang SETELAH build: output harus >= semua source.
   const after = gatherEntries(ROOT);
   if (isBundleStale(after.sources, after.outputs)) {
-    console.error('[predeploy] GAGAL: output build tetap lebih lama dari source.');
-    console.error(`[predeploy] max source : ${fmt(maxMtime(after.sources))}`);
-    console.error(`[predeploy] min output : ${fmt(minMtime(after.outputs))}`);
+    console.error('[bundle-check] GAGAL: output build tetap lebih lama dari source.');
+    console.error(`[bundle-check] max source : ${fmt(maxMtime(after.sources))}`);
+    console.error(`[bundle-check] min output : ${fmt(minMtime(after.outputs))}`);
     process.exit(1);
   }
 
   if (checkOnly) {
-    console.log('[predeploy] OK: bundle fresh (mode cek, tanpa rebuild).');
+    console.log('[bundle-check] OK: bundle fresh (mode cek, tanpa rebuild).');
   } else {
-    console.log('[predeploy] OK: bundle + css segar -> siap deploy.');
+    console.log('[bundle-check] OK: bundle + css segar -> siap deploy.');
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('predeploy.mjs')) {
+if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('bundle-check.mjs')) {
   main(process.argv.slice(2)).catch((e) => {
-    console.error('[predeploy]', e && e.message ? e.message : e);
+    console.error('[bundle-check]', e && e.message ? e.message : e);
     process.exit(1);
   });
 }

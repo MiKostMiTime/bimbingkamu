@@ -1,5 +1,7 @@
 # P0 — Fix HTTP 403 Across All Providers (Root Cause + Plan)
 
+> **Catatan historis:** dokumen ini ditulis saat deploy masih di Vercel. Deploy kini di Cloudflare Pages — lihat README.md.
+
 **Status:** ✅ IMPLEMENTED + TESTED (5/5 areas done; 152 tests passing)
 **Scope:** `js/config.js`, `js/app.js`, `js/api.js`, `js/providers.js`, `js/adapters.js` + new tests.
 

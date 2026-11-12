@@ -8,7 +8,7 @@
 //
 // kind:
 //   'oi'        = OpenAI-compatible (path generik /chat/completions). Dipakai
-//                 OpenRouter, Gemini AI Studio, OpenAI, ElectronHub, Groq, dan
+//                 OpenRouter, Gemini AI Studio, OpenAI, Groq, dan
 //                 Custom-OI (default untuk provider custom user).
 //   'anthropic' = Claude native (/v1/messages, auth x-api-key +
 //                 anthropic-version, streaming content_block_delta,
@@ -77,12 +77,10 @@ export function resolveAuthHeaders(provider, apiKey) {
 
 // ===== SPESIFIKATOR PROVIDER BAWAAN (sumber benarku DEFAULT_PROVIDERS) =====
 // Masing-masing memperluas template adapter dengan baseUrl + kapabilitas khusus.
-// contextStrategy 'none' → ElectronHub tak pernah probe /api/v0/models (bug lama).
 export const PROVIDER_DEFS = [
   { id: 'ep-openrouter', name: 'OpenRouter', kind: 'oi', baseUrl: 'https://openrouter.ai/api/v1' },
   { id: 'ep-gemini', name: 'Gemini AI Studio', kind: 'oi', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' },
   { id: 'ep-openai', name: 'OpenAI', kind: 'oi', baseUrl: 'https://api.openai.com/v1' },
-  { id: 'ep-electronhub', name: 'ElectronHub', kind: 'oi', baseUrl: 'https://api.electronhub.ai/v1', contextStrategy: 'none' },
   { id: 'ep-groq', name: 'Groq', kind: 'oi', baseUrl: 'https://api.groq.com/openai/v1' },
   { id: 'ep-anthropic', name: 'Claude (Anthropic)', kind: 'anthropic', baseUrl: 'https://api.anthropic.com/v1' },
 ];

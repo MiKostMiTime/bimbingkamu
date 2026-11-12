@@ -13,7 +13,7 @@
 import { chromium } from 'playwright-core';
 
 const NGROK = process.env.NGROK_BASE || 'https://oyster-regroup-neatness.ngrok-free.dev';
-const APP = process.env.APP_URL || 'https://bimbingkamu.vercel.app/';
+const APP = process.env.APP_URL || 'https://bimbingkamu.pages.dev/';
 const CHROME_EXE = process.env.CHROME_EXE || '/Users/deddybathara/Library/Caches/ms-playwright/chromium-1254/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
 
 const ngrokProvider = {

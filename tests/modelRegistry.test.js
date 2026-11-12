@@ -110,11 +110,11 @@ test('recommendModel: kembalikan top per case; null bila kosong', () => {
 const metaGemini = resolveModelMeta('google/gemini-2.0-flash', { providerId: 'ep-openrouter' });
 const metaClaude = resolveModelMeta('anthropic/claude-3.5-sonnet', { providerId: 'ep-openrouter' });
 
-test('formatOptionLabel: bintang + context + harga saat direkomendasikan (gemini)', () => {
-  // gemini menang >1 case → tak ada caseLabel; format: ⭐ · 1000K · $0.10/M
-  const label = formatOptionLabel(metaGemini, { isRecommended: true, recommendedFor: ['quick', 'documents', 'vision'] });
-  assert.match(label, /^Gemini 2\.0 Flash \u2b50/);          // diawali displayName + ⭐
-  assert.match(label, / \u00b7 1000K \u00b7 \$0\.10\/M$/);   // · 1000K · $0.10/M (toFixed(2))
+test('formatOptionLabel: context + harga tanpa bintang (gemini)', () => {
+  // gemini menang >1 case → tak ada caseLabel; format: 1000K · $0.10/M
+  const label = formatOptionLabel(metaGemini, { recommendedFor: ['quick', 'documents', 'vision'] });
+  assert.match(label, /^Gemini 2\.0 Flash \u00b7 1000K \u00b7 \$0\.10\/M$/); // nama · 1000K · $0.10/M
+  assert.ok(!label.includes('\u2b50'), 'bintang dihapus (tak konsisten)');
   assert.ok(!label.includes('Hemat'), 'tak ada caseLabel bila >1 case');
 });
 
@@ -130,8 +130,21 @@ test('formatOptionLabel: tanpa rekomendasi → tak ada bintang', () => {
 });
 
 test('formatOptionLabel: caseLabel muncul bila unggul tepat SATU case', () => {
-  const label = formatOptionLabel(metaGemini, { isRecommended: true, recommendedFor: ['quick'] });
-  assert.match(label, /\u2b50 \u00b7 Hemat & Cepat/);        // · Hemat & Cepat
+  const label = formatOptionLabel(metaGemini, { recommendedFor: ['quick'] });
+  assert.equal(label, 'Gemini 2.0 Flash \u00b7 Hemat & Cepat \u00b7 1000K \u00b7 $0.10/M');
+});
+
+test('formatOptionLabel: model gratis ditandai "Gratis", bukan $0/M', () => {
+  const freeByPricing = formatOptionLabel(
+    { id: 'some/model', displayName: 'Model Gratis', contextWindow: 32000, pricing: { input: 0, output: 0 } },
+    {},
+  );
+  assert.equal(freeByPricing, 'Model Gratis \u00b7 32K \u00b7 Gratis');
+  const freeBySuffix = formatOptionLabel({ id: 'meta-llama/llama-4:free', displayName: 'Llama 4', pricing: null }, {});
+  assert.equal(freeBySuffix, 'Llama 4 \u00b7 Gratis');
+  // Berbayar tetap harga.
+  const paid = formatOptionLabel({ id: 'x', displayName: 'X', pricing: { input: 0.5, output: 1 } }, {});
+  assert.equal(paid, 'X \u00b7 $0.50/M');
 });
 
 test('formatOptionLabel: model unknown → label id saja (graceful)', () => {
@@ -153,7 +166,7 @@ test('buildRichOptions: kembalikan option value-ready {id,label,recommendedFor}'
     assert.ok(Array.isArray(o.recommendedFor));
   }
   const gemini = opts.find((o) => o.id === 'google/gemini-2.0-flash');
-  assert.match(gemini.label, /\u2b50/);                      // gemini punya bintang
+  assert.ok(!gemini.label.includes('\u2b50'), 'label tanpa bintang');
   assert.ok(gemini.recommendedFor.length > 0, 'gemini direkomendasikan');
 });
 

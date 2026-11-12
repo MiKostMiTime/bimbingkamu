@@ -9,7 +9,7 @@
 //   - aset lokal (same-origin)  → cache-first  (offline-ready)
 //   - API endpoint provider      → network-first (cache sebagai cadangan)
 //   - sw.js sendiri              → network-only (selalu versi terbaru)
-//   - navigasi SPA               → fallback ke index.html (Vercel rewrite)
+//   - navigasi SPA               → fallback ke index.html (_redirects SPA)
 
 import {
   CACHE_VERSION,
@@ -26,7 +26,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_VERSION).then(async (cache) => {
       // cache:'reload' memaksa ambil dari jaringan, bukan HTTP cache. Aset
-      // /js/* di Vercel ber-header immutable (1 tahun); tanpa ini update bundle
+      // /js/* ber-header immutable (lihat _headers); tanpa ini update bundle
       // setelah deploy bisa terus memakai salinan lama di perangkat pengguna.
       try {
         await Promise.all(
@@ -75,7 +75,7 @@ self.addEventListener('fetch', (event) => {
       (async () => {
         try {
           const net = await fetch(request);
-          // Vercel merewrite path tak dikenal ke index.html (status 200).
+          // _redirects merewrite path tak dikenal ke index.html (status 200).
           // Kembalikan responnya apa adanya; bila jaringan drop, pakai shell.
           return net;
         } catch {

@@ -7,19 +7,22 @@
 .superpowers/
 
 # ===== DEV-ONLY: UNIT TESTS & DOKUMENTASI PLAN/SPEC =====
-# Tetap tersimpan lokal untuk verifikasi/dokumen, tapi TAK ter-deploy ke Vercel.
+# Tetap tersimpan lokal untuk verifikasi/dokumen, tapi TAK ter-deploy ke Pages.
 tests/
 docs/
 
 # ===== LOCAL DEV SCRIPTS & SCRATCH =====
 tmp/
 
-# ===== PLAYWIGHT PERSISTENCE (repro-*.mjs) — dev-only =====
+# ===== PLAYWRIGHT PERSISTENCE (repro-*.mjs) — dev-only =====
 .pw-persist-hd/
 
-# ===== NODE (jika nanti ada build step) =====
+# ===== NODE =====
 node_modules/
 package-lock.json
-.vercel/
-.vercel
+
+# ===== ENV lokal (kredensial dev; jangan pernah commit) =====
 .env*
+
+# ===== ARTIFACT deploy lokal (mis. wrangler) =====
+.wrangler/

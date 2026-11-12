@@ -1,0 +1,20 @@
+t=2026-11-11T20:43:55+0700 lvl=info msg="no configuration paths supplied"
+t=2026-11-11T20:43:55+0700 lvl=info msg="using configuration at default config path" path="/Users/deddybathara/Library/Application Support/ngrok/ngrok.yml"
+t=2026-11-11T20:43:55+0700 lvl=info msg="open config file" path="/Users/deddybathara/Library/Application Support/ngrok/ngrok.yml" err=<nil>
+t=2026-11-11T20:43:55+0700 lvl=info msg="FIPS 140 mode" enabled=false
+t=2026-11-11T20:43:55+0700 lvl=info msg="starting web service" obj=web addr=127.0.0.1:4040 allow_hosts=[]
+t=2026-11-11T20:43:56+0700 lvl=info msg="client session established" obj=tunnels.session
+t=2026-11-11T20:43:56+0700 lvl=info msg="tunnel session started" obj=tunnels.session
+t=2026-11-11T20:43:56+0700 lvl=info msg="started tunnel" obj=tunnels name=command_line addr=http://localhost:8791 url=https://oyster-regroup-neatness.ngrok-free.dev
+t=2026-11-11T20:44:16+0700 lvl=info msg=start pg=/api/tunnels id=219d4851572985b2
+t=2026-11-11T20:44:16+0700 lvl=info msg=end pg=/api/tunnels id=219d4851572985b2 status=200 dur=221.709µs
+t=2026-11-11T20:45:12+0700 lvl=info msg=start pg=/api/tunnels id=64d32bb48092ba75
+t=2026-11-11T20:45:12+0700 lvl=info msg=end pg=/api/tunnels id=64d32bb48092ba75 status=200 dur=607.333µs
+t=2026-11-11T20:45:14+0700 lvl=info msg="join connections" obj=join id=388cdd8662eb l=127.0.0.1:8791 r=[2a09:bac1:34a0:18::593:14]:52312
+t=2026-11-11T20:45:14+0700 lvl=info msg="join connections" obj=join id=4086a2c0d003 l=127.0.0.1:8791 r=104.28.213.128:23181
+t=2026-11-11T20:56:53+0700 lvl=info msg=start pg=/api/tunnels id=9f0dd54e36a318ad
+t=2026-11-11T20:56:53+0700 lvl=info msg=end pg=/api/tunnels id=9f0dd54e36a318ad status=200 dur=2.211208ms
+t=2026-11-11T20:57:11+0700 lvl=info msg="join connections" obj=join id=8856d02ed5be l=127.0.0.1:8791 r=[2a09:bac1:34a0:18::593:14]:23156
+t=2026-11-11T20:57:11+0700 lvl=info msg="join connections" obj=join id=b70943293d7c l=127.0.0.1:8791 r=104.28.213.128:65465
+t=2026-11-11T21:05:07+0700 lvl=info msg="INFO received stop request obj=app stopReq=\"{err:<nil> restart:false}\""
+t=2026-11-11T21:05:07+0700 lvl=info msg="session closing" obj=tunnels.session err=<nil>

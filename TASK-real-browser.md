@@ -1,5 +1,7 @@
 # Reproduce `net::ERR_FAILED` in a REAL browser (no extension) → root cause → minimal fix
 
+> **Catatan historis:** dokumen ini ditulis saat deploy masih di Vercel. Deploy kini di Cloudflare Pages — lihat README.md.
+
 ## Context
 - App: `https://bimbingkamu.vercel.app/` (Vercel, HTTPS public). Deployed project `bimbingkamu`.
 - Broken endpoint: `https://oyster-regroup-neatness.ngrok-free.dev/v1/models` → `net::ERR_FAILED` status 0.

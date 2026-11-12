@@ -258,35 +258,46 @@ function formatPrice(input = null) {
 }
 
 // ===== FORMAT LABEL — teks-kaya satu baris untuk <option> (spec §8) =====
-// Format: {displayName} {star}{caseLabel?} · {ctxK}K · ${price}/M
-//   star    = ⭐ bila direkomendasikan (≥1 case).
+// Format: {displayName}{caseLabel?} · {ctxK}K · {Gratis|$price/M}
 //   caseLabel = label use-case utama HANYA bila unggul tepat SATU case (agar ringkas).
-//   ctxK    = contextWindow ÷ 1000 (bulat), bila tersedia.
-//   price   = harga input USD / 1M token, bila tersedia.
+//   ctxK      = contextWindow ÷ 1000 (bulat), bila tersedia.
+//   Gratis    = pengganti harga bila model tak berbayar (lihat isFreeModel).
 // Graceful: tiap bagian opsional; metadata kosong → cukup id/displayName.
-export function formatOptionLabel(meta, { isRecommended = false, recommendedFor = [] } = {}) {
+// Catatan: bintang ⭐ DIHAPUS. rankModels menandai SEMUA pemenang seri, sehingga
+// praktis semua model mendapat bintang dan penandanya kehilangan makna.
+export function formatOptionLabel(meta, { recommendedFor = [] } = {}) {
   const name = (meta && meta.displayName) || (meta && meta.id) || '';
 
   let prefix = name;
-  if (isRecommended) {
-    prefix += ' \u2b50'; // ⭐
-    // caseLabel hanya bila tepat satu case.
-    if (recommendedFor.length === 1) {
-      const c = MODEL_USE_CASES.find((x) => x.id === recommendedFor[0]);
-      if (c) prefix += ` \u00b7 ${c.label}`; // · <label>
-    }
+  // caseLabel hanya bila unggul tepat SATU case. 'balanced' tidak ditampilkan:
+  // hampir semua model mendapatkannya dari heuristik dasar (noise di dropdown).
+  if (recommendedFor.length === 1 && recommendedFor[0] !== 'balanced') {
+    const c = MODEL_USE_CASES.find((x) => x.id === recommendedFor[0]);
+    if (c) prefix += ` \u00b7 ${c.label}`; // · <label>
   }
 
   const suffixes = [];
   if (meta && typeof meta.contextWindow === 'number') {
     suffixes.push(`${Math.round(meta.contextWindow / 1000)}K`);
   }
-  if (meta && meta.pricing) {
+  if (isFreeModel(meta)) {
+    suffixes.push('Gratis'); // tanpa saldo pun bisa dipakai
+  } else if (meta && meta.pricing) {
     const price = formatPrice(meta.pricing.input);
     if (price) suffixes.push(`$${price}/M`); // $price/M; '·' ditambahkan saat join
   }
 
   return suffixes.length ? `${prefix} \u00b7 ${suffixes.join(' \u00b7 ')}` : prefix;
+}
+
+// Model tanpa biaya: id berakhiran ":free" (konvensi OpenRouter) ATAU harga
+// input & output sama-sama 0. Dipakai label dropdown supaya siswa langsung
+// tahu model mana yang bisa dipakai tanpa mengisi saldo.
+export function isFreeModel(meta) {
+  if (!meta) return false;
+  if (/:free$/i.test(String(meta.id || ''))) return true;
+  const p = meta.pricing;
+  return Boolean(p) && p.input === 0 && p.output === 0;
 }
 
 // ===== BUILD RICH OPTIONS — <option> siap render (spec §9) =====
@@ -299,7 +310,7 @@ export function buildRichOptions(providerId, ids, { ranked = [] } = {}) {
     const r = byId.get(id);
     const meta = (r && r.meta) || resolveModelMeta(id, { providerId });
     const recommendedFor = (r && Array.isArray(r.recommendedFor)) ? r.recommendedFor : [];
-    const label = formatOptionLabel(meta, { isRecommended: recommendedFor.length > 0, recommendedFor });
+    const label = formatOptionLabel(meta, { recommendedFor });
     return { id, label, recommendedFor };
   });
 }

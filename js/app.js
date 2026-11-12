@@ -101,7 +101,6 @@ const dom = {
   providerSelect: $('providerSelect'),
   addEndpointBtn: $('addEndpointBtn'),
   providerList: $('providerList'),
-  bridgeStatus: $('bridgeStatus'),
   setupGuideToggle: $('setupGuideToggle'),
   setupGuideBody: $('setupGuideBody'),
   connStatus: $('headerConnStatus'),
@@ -258,44 +257,6 @@ function focusChatTarget() {
   else dom.model.focus();
 }
 
-// Indikator status ekstensi bridge (LM Studio / ngrok). Content script berjalan
-// di MAIN world, jadi objek debug-nya terlihat dari halaman. Indikator ini
-// dibuat supaya pengguna tahu ekstensi sudah benar tanpa membuka DevTools.
-// Samakan dengan VERSION di lmstudio-bridge/main.js + manifest.json.
-const BRIDGE_VERSION = '1.2.0';
-
-// Chrome Android & Safari iOS tidak mendukung ekstensi ini. Di perangkat itu
-// pesan status tidak boleh menyuruh memasang ekstensi; arahkan ke URL HTTPS.
-function isHandheld() {
-  if (typeof navigator === 'undefined') return false;
-  const ua = navigator.userAgent || '';
-  if (/Android|iPhone|iPad|iPod/i.test(ua)) return true;
-  // iPadOS 13+ menyamar sebagai Macintosh; sentuhan membedakannya.
-  return /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
-}
-
-function renderBridgeStatus() {
-  const el = dom.bridgeStatus;
-  if (!el) return;
-  const bridge = window.__bkbBridgeDebug;
-  el.classList.remove('is-ok', 'is-warn');
-
-  if (!bridge) {
-    el.classList.add('is-warn');
-    el.textContent = isHandheld()
-      ? 'Di HP ekstensi tidak tersedia. Jalankan tunnel HTTPS di komputer, lalu tempel alamatnya di Base URL (lihat Panduan Setup).'
-      : 'Ekstensi bridge belum aktif. Untuk endpoint lokal, LAN IP, atau ngrok, pasang ekstensi v' + BRIDGE_VERSION + ' lewat Panduan Setup di bawah.';
-    return;
-  }
-  if (bridge.version !== BRIDGE_VERSION) {
-    el.classList.add('is-warn');
-    el.textContent = 'Ekstensi bridge versi lama terdeteksi (' + (bridge.version || 'tidak dikenal') + '). Perbarui ke v' + BRIDGE_VERSION + ' lewat Panduan Setup di bawah.';
-    return;
-  }
-  el.classList.add('is-ok');
-  el.textContent = 'Ekstensi bridge v' + BRIDGE_VERSION + ' aktif. Endpoint lokal, LAN IP, dan ngrok siap dihubungkan.';
-}
-
 // Indikator status koneksi di header chat.
 function updateConnStatus(stateOverride) {
   if (!dom.connStatus) return;
@@ -303,7 +264,7 @@ function updateConnStatus(stateOverride) {
   dom.connStatus.classList.remove('is-ok', 'is-error');
   if (s === 'ok') { dom.connStatus.textContent = '● terhubung'; dom.connStatus.classList.add('is-ok'); }
   else if (s === 'error') { dom.connStatus.textContent = '● gagal'; dom.connStatus.classList.add('is-error'); }
-  else dom.connStatus.textContent = '● belum ada endpoint';
+  else dom.connStatus.textContent = '● belum ada layanan';
 }
 
 // Isi dropdown model (#modelSelect) berdasarkan endpoint TERPILIH.
@@ -363,7 +324,11 @@ async function refreshProviderModelList() {
     const enriched = nextIds.map((id) => ({ id, meta: resolveModelMeta(id, { providerId: provider.id }) }));
     const ranked = rankModels(enriched, { providerId: provider.id });
     const options = buildRichOptions(provider.id, nextIds, { ranked });
-    dom.model.innerHTML = options.map((o) => `<option value="${o.id}"${o.recommendedFor.length ? ' data-recommended="1"' : ''}>${o.label}</option>`).join('');
+    // <option> memakai escapeAttr/escapeHtml (pola yang sama dengan dropdown
+    // endpoint di bawah): id model kini dipertahankan utuh (':8b', '@q4_k_m',
+    // ':free') sehingga WAJIB di-escape di titik render — bukan dimutasi saat
+    // disimpan (mutasi itu yang merusak id → 400 Invalid model).
+    dom.model.innerHTML = options.map((o) => `<option value="${escapeAttr(o.id)}"${o.recommendedFor.length ? ' data-recommended="1"' : ''}>${escapeHtml(o.label)}</option>`).join('');
     dom.model.value = nextIds.includes(state.settings.model) ? state.settings.model : nextIds[0];
     state.settings.model = dom.model.value;
     persistSettings();
@@ -416,7 +381,7 @@ function resetModelDropdown(searchApi) {
 function renderProviderOptions() {
   const providers = currentProviders();
   if (!Object.keys(providers).length) {
-    dom.providerSelect.innerHTML = '<option value="">Belum ada endpoint</option>';
+    dom.providerSelect.innerHTML = '<option value="">Belum ada layanan</option>';
     return;
   }
   dom.providerSelect.innerHTML = Object.values(providers)
@@ -476,8 +441,12 @@ async function connectEndpoint({ baseUrl, name, key, providerId }) {
   renderProviderOptions();
   await refreshProviderModelList();
   renderEndpoints();
-  showToast(`Endpoint "${provider.name}" ${providerId ? 'disunting.' : 'terhubungkan.'}`, 'success');
-  return listModels(activeApiKey(), provider);
+  showToast(`Layanan "${provider.name}" ${providerId ? 'disunting.' : 'terhubung.'}`, 'success');
+  const ids = await listModels(activeApiKey(), provider);
+  // Label kaya (Gratis/konteks/harga) juga dikirim ke onboarding supaya siswa
+  // bisa langsung memilih model gratis tanpa membuka Pengaturan dulu.
+  const meta = ids.map((mid) => ({ id: mid, meta: resolveModelMeta(mid, { providerId: id }) }));
+  return { ids, options: buildRichOptions(id, ids, { ranked: rankModels(meta, { providerId: id }) }) };
 }
 
 // Hapus endpoint terdaftar: endpoint custom dibuang dari array; endpoint
@@ -502,7 +471,7 @@ function renderEndpoints() {
   const providers = Object.values(currentProviders());
   if (!providers.length) {
     dom.providerList.innerHTML =
-      '<li class="provider-list__empty">Belum ada endpoint terdaftar.</li>';
+      '<li class="provider-list__empty">Belum ada layanan terdaftar.</li>';
     return;
   }
   dom.providerList.innerHTML = providers
@@ -543,16 +512,17 @@ function openEndpointModal(id) {
   if (isEdit && !p) return;
 
   const modalRef = showModal({
-    title: isEdit ? 'Sunting endpoint' : 'Tambah endpoint',
+    title: isEdit ? 'Sunting layanan' : 'Tambah layanan',
     showClose: false,
     body: `
       <div class="field">
-        <label class="field__label" for="epEditUrl">Silakan masukan URL</label>
+        <label class="field__label" for="epEditUrl">Alamat API (URL)</label>
         <input id="epEditUrl" class="input" type="text" value="${escapeAttr(isEdit ? p.baseUrl : '')}" placeholder="http://127.0.0.1:1234" autocomplete="off" spellcheck="false" />
+        <p class="field__hint">Contoh: <code>https://openrouter.ai/api/v1</code> untuk layanan cloud, atau <code>http://localhost:1234</code> untuk LM Studio di komputer ini. Pakai alamat API-nya, bukan alamat halaman dashboard.</p>
       </div>
       <div class="field">
-        <label class="field__label" for="epEditName">Nama Endpoint</label>
-        <input id="epEditName" class="input" type="text" value="${escapeAttr(isEdit ? p.name : '')}" placeholder="Silakan masukan nama endpoint" required autocomplete="off" spellcheck="false" />
+        <label class="field__label" for="epEditName">Nama layanan</label>
+        <input id="epEditName" class="input" type="text" value="${escapeAttr(isEdit ? p.name : '')}" placeholder="Bebas, mis. OpenRouter" required autocomplete="off" spellcheck="false" />
       </div>
       <div class="field">
         <label class="field__label" for="epEditKey">Kunci API</label>
@@ -560,13 +530,13 @@ function openEndpointModal(id) {
           <input id="epEditKey" class="input endpoint-edit__key" type="password" value="${escapeAttr(isEdit ? p.key || '' : '')}" placeholder="Kunci API (opsional)" autocomplete="off" spellcheck="false" />
           <button id="epEditKeyToggle" class="btn btn--ghost btn--sm" type="button" aria-label="Tampilkan/sembunyikan kunci">${EYE}</button>
         </div>
-        <p class="field__hint">Kunci disimpan di browser ini dan dipakai khusus untuk endpoint tersebut. Endpoint lokal tanpa auth boleh dikosongkan. Bila LM Studio memakai <strong>Require Authentication</strong>, buat token di <strong>Developer → Server Settings → Manage Tokens</strong> lalu tempel di sini.</p>
+        <p class="field__hint">Kunci API adalah kode rahasia dari website penyedia (biasanya di menu <em>API keys</em>). Disimpan di browser ini saja dan hanya dipakai untuk layanan ini. LM Studio lokal biasanya tidak butuh kunci — namun bila <strong>Require Authentication</strong> aktif, buat token di <strong>Developer → Server Settings → Manage Tokens</strong> lalu tempel di sini.</p>
       </div>
     `,
     actions: [
       { label: 'Batal', kind: 'secondary', onClick: () => modalRef.close() },
       {
-        label: isEdit ? 'Simpan perubahan' : 'Tambah endpoint',
+        label: isEdit ? 'Simpan perubahan' : 'Tambah layanan',
         kind: 'primary',
         primary: true,
         keepOpen: true,
@@ -596,18 +566,18 @@ function openEndpointModal(id) {
     const name = editModal.querySelector('#epEditName').value.trim();
     const key = editModal.querySelector('#epEditKey').value.trim();
     if (!baseUrl) {
-      showToast('Masukkan URL endpoint dulu.', 'error');
+      showToast('Masukkan alamat API dulu, ya.', 'error');
       return;
     }
     if (!name) {
-      showToast('Masukkan nama endpoint dulu.', 'error');
+      showToast('Masukkan nama layanan dulu, ya.', 'error');
       return;
     }
     try {
       await connectEndpoint({ baseUrl, name, key, providerId: editId || undefined });
       modalRef.close();
     } catch (err) {
-      showToast((err && err.message) || (editId ? 'Gagal menyimpan endpoint.' : 'Gagal menambahkan endpoint.'), 'error');
+      showToast((err && err.message) || (editId ? 'Gagal menyimpan layanan.' : 'Gagal menambahkan layanan.'), 'error');
     }
   }
 }
@@ -616,8 +586,8 @@ function openEndpointModal(id) {
 function deleteEndpointConfirm(id) {
   const p = currentProviders()[id];
   showConfirm({
-    title: 'Hapus endpoint?',
-    text: `"${(p && p.name) || id}" akan dihapus dari daftar endpoint. Riwayat chat yang sudah ada tidak ikut terhapus.`,
+    title: 'Hapus layanan ini?',
+    text: `"${(p && p.name) || id}" akan dihapus dari daftar layanan. Riwayat chat yang sudah ada tidak ikut terhapus.`,
     confirmLabel: 'Ya, hapus',
     kind: 'danger',
     onConfirm: async () => {
@@ -1095,7 +1065,7 @@ function startFreshSession() {
   if (!buildMateri()) {
     addNotice(dom.messages, 'Isi materi di Pengaturan (tombol gear, kanan atas) dulu, ya. Tutor butuh bahan untuk membimbingmu.', 'system');
   } else {
-    addNotice(dom.messages, 'Pilih endpoint dan model di Pengaturan (tombol gear, kanan atas) dulu, ya.', 'system');
+    addNotice(dom.messages, 'Pilih layanan AI dan model di Pengaturan (tombol gear, kanan atas) dulu, ya.', 'system');
   }
   saveActiveSession();
 }
@@ -1242,7 +1212,7 @@ async function sendUserMessage(rawText, opts = {}) {
   if (!text || state.busy) return;
 
   if (!hasActiveChatTarget()) {
-    showToast('Pilih endpoint & model dulu, ya.', 'info');
+    showToast('Pilih layanan AI dan model dulu, ya.', 'info');
     focusChatTarget();
     return;
   }
@@ -1419,7 +1389,7 @@ function rerenderModelMessage(idx) {
 // Regenerasi balasan model terakhir via planRedo → providerChat → rebuild bubble.
 async function regenerateLast() {
   if (state.busy) { showToast('Tunggu balasan tutor selesai dulu, ya.', 'info'); return; }
-  if (!hasActiveChatTarget()) { showToast('Pilih endpoint & model dulu, ya.', 'info'); focusChatTarget(); return; }
+  if (!hasActiveChatTarget()) { showToast('Pilih layanan AI dan model dulu, ya.', 'info'); focusChatTarget(); return; }
   if (!buildMateri()) { showToast('Lampirkan file materi dulu.', 'error'); openSettingsAndFocus(dom.materiDrop); return; }
 
   const plan = applyRedo(state.messages, planRedo(state.messages));
@@ -1539,7 +1509,6 @@ function openSettingsPanel() {
   dom.settingsBackdrop.classList.add('is-open');
   dom.settingsToggle.setAttribute('aria-expanded', 'true');
   if (isMobile()) closeSidebar();
-  renderBridgeStatus(); // cek ulang: ekstensi mungkin dipasang setelah halaman dimuat
   dom.settingsClose.focus(); // fokus pindah ke dalam drawer
 }
 
@@ -1752,10 +1721,10 @@ function renderTokenStat() {
     if (warn) dom.tokenTotal.style.color = warn;
     title = `Konteks terpakai ±${pct}% dari ${state.contextLimit.toLocaleString('id-ID')} token model ini (↑ prompt terakhir).`;
   } else {
-    title = 'Context limit model tidak dilaporkan endpoint (hanya LM Studio yang menyediakannya).';
+    title = 'Batas konteks model ini tidak dilaporkan layanannya (hanya LM Studio yang menyediakannya).';
   }
   if (state.pricing) {
-    title += ` Harga: ${state.pricing.source === 'local' ? 'lokal/gratis' : state.pricing.source === 'manual' ? 'diisi manual' : 'dari endpoint'}`;
+    title += ` Harga: ${state.pricing.source === 'local' ? 'lokal/gratis' : state.pricing.source === 'manual' ? 'diisi manual' : 'dari layanan'}`;
     if (rate) {
       title += `; kurs Rp${rate.toLocaleString('id-ID')}/USD`;
       if (state.settings.usdIdrManual) title += ' (manual)';
@@ -2330,7 +2299,6 @@ function init() {
   updateComposer();
   startActiveTimer();
   bindEvents();
-  renderBridgeStatus();
 
   // Endpoint tersimpan dari sesi lalu → segarkan daftar model dari endpoint itu.
   if (state.settings.provider) refreshProviderModelList();

@@ -1,5 +1,7 @@
 # P2 — Deploy staleness hook + minor fixes (catatan eksekusi)
 
+> **Catatan historis:** dokumen ini ditulis saat deploy masih di Vercel. Deploy kini di Cloudflare Pages — lihat README.md.
+
 **Tujuan:** Vercel men-deploy `js/app.bundle.js` yang DI-COMMIT (bukan source).
 Bila developer ubah source tapi lupa rebuild+commit → bundle tua tayang. P2
 menambahkan: (1) hook predeploy, (2) fix minor di normalizeEndpointUrl + cascade retry.

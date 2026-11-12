@@ -10,7 +10,7 @@ import { mapApiError, extractSources } from './api.js';
 import { getAdapter, resolveAuthHeaders, PROVIDER_DEFS, buildProviderSeed, readSSEAnthropic, normalizeAnthropicText, readStreamChunk } from './adapters.js';
 
 // ===== PROXY & providerFetch (PNA/CORS) =====
-// Masalah: aplikasi dijalankan sebagai halaman HTTPS di Vercel. Bila endpoint
+// Masalah: aplikasi dijalankan sebagai halaman HTTPS (Cloudflare Pages). Bila endpoint
 // ditambahkan user berupa tunnel publik (mis. ngrok: https://....ngrok-free.dev),
 // browser mengirim OPTIONS preflight PNA; server membalas 200 + Access-Control-
 // Allow-Origin:* TAPI tanpa Access-Control-Allow-Private-Network → Chrome menolak
@@ -18,10 +18,10 @@ import { getAdapter, resolveAuthHeaders, PROVIDER_DEFS, buildProviderSeed, readS
 // Endpoint lokal (same-network) tidak terkena PNA, jadi tetap jalan langsung.
 //
 // Solusi: providerFetch() coba fetch LANGSUNG dulu; bila gagal → fallback ke
-// proksi same-origin /api/proxy (Vercel). Proksi melakukan fetch dari SISI SERVER
+// proksi same-origin /api/proxy (Pages Function). Proksi melakukan fetch dari SISI SERVER
 // (bebas CORS + PNA) lalu mengembalikan envelope JSON {status,ok,headers,body}
 // yang dibungkus menjadi Response agar caller (.json()/.text()/.body) tetap jalan.
-// Ini membuat endpoint publik/ngrok bekerja TANPA ekstensi & TANPA user harus
+// Ini membuat endpoint publik/ngrok bekerja tanpa user harus
 // mengaktifkan ACPNT/CORS di tunnel-nya; lokal tetap lewat jalur langsung (cepat).
 const PROXY_PATH = '/api/proxy';
 
@@ -108,7 +108,7 @@ async function proxyFetch(targetUrl, init = {}) {
     envelope.body = typeof init.body === 'string' ? init.body : JSON.stringify(init.body);
   }
   // POST ke proksi same-origin: body chat + materi bisa puluhan KB dan TIDAK
-  // muat di query string GET (Vercel membalas 414). Server /api/proxy membaca
+  // muat di query string GET (URL panjang dibalas 414). Server /api/proxy membaca
   // envelope JSON ini dari body request.
   const res = await fetch(PROXY_PATH, {
     method: 'POST',
@@ -116,7 +116,7 @@ async function proxyFetch(targetUrl, init = {}) {
     body: JSON.stringify(envelope),
     signal: init.signal,
   });
-  if (!res.ok) throw { type: 'network', message: 'Proksi endpoint gagal memanggil target.' };
+  if (!res.ok) throw { type: 'network', message: 'Layanan tidak bisa dihubungi lewat perantara. Coba lagi.' };
 
   // Proksi kini membalas dalam 2 mode: (a) stream mentah text/event-stream untuk
   // chat streaming (passthrough → readSSE), atau (b) envelope JSON untuk
@@ -128,8 +128,20 @@ async function proxyFetch(targetUrl, init = {}) {
 
   let env; try { env = await res.json(); } catch { env = {}; }
   const bodyText = env.body != null ? env.body : '';
+  const envStatus = Number(env.status) || 0;
+  // Audit P1-7: proksi membalas `status: 0` saat upstream tak pernah menjawab
+  // (proxyStatus 'threw'/'timeout'). Dulu kode menyusun Response ber-status 0 →
+  // spesifikasi Response MENOLAK (RangeError) sehingga pesan asli (env.err)
+  // hilang. Sekarang kegagalan transport dipetakan ke error network terstruktur
+  // dengan detail env.err — perilakunya sama dengan jalur direct (mapApiError(0)).
+  if (!env.ok && (envStatus < 200 || envStatus > 599)) {
+    const base = mapApiError(0).message;
+    const detail = env.err ? ` Detail: ${env.err}` : '';
+    const reason = env.proxyStatus === 'timeout' ? ' Waktu tunggu (timeout) perantara habis.' : '';
+    throw { type: 'network', message: `${base}${reason}${detail}`, detail: env.err || '', proxyStatus: env.proxyStatus || '' };
+  }
   return new Response(bodyText, {
-    status: env.status || (env.ok ? 200 : 0),
+    status: envStatus,
     statusText: env.ok ? 'OK' : 'Proxy',
     headers: { 'content-type': 'application/json; charset=utf-8' },
   });
@@ -159,7 +171,7 @@ export async function providerFetch(targetUrl, init = {}, opts = {}) {
   const DIRECT_TIMEOUT_MS = opts.timeoutMs ?? DEFAULT_DIRECT_TIMEOUT_MS;
 
   // RC4: target lokal/private (loopback / LAN) TIDAK pernah diteruskan ke proksi
-  // cloud Vercel — proksi tak jangkau localhost/IP-private pengguna, jadi fallback
+  // cloud — proksi tak jangkau localhost/IP-private pengguna, jadi fallback
   // proksi hanya memberi error misleading / retry cloud diam-diam. Lokal lewat jalur
   // LANGSUNG saja (header bypass tunnel tetap dipakai bila host ngrok/localtunnel).
   // Deteksi dari host target; isLocalTarget dipakai toProxy() untuk membatalkan
@@ -188,7 +200,8 @@ export async function providerFetch(targetUrl, init = {}, opts = {}) {
   // nilai siap, sehingga cabang yang kalah (settled===true) menunggu gate →
   // Promise.race TIDAK PERNAK mengembalikan undefined (fix: .ok pada undefined).
   let resolveWinner = () => {};
-  const winnerGate = new Promise((resolve) => { resolveWinner = resolve; });
+  let rejectWinner = () => {};
+  const winnerGate = new Promise((resolve, reject) => { resolveWinner = resolve; rejectWinner = reject; });
 
   // Tandai pemenang PERTAMA: jalankan cleanup + hentikan fetch latar belakang.
   // keepBodySignal: bila jalur LANGSUNG menang dengan Response yang body-nya akan
@@ -215,7 +228,7 @@ export async function providerFetch(targetUrl, init = {}, opts = {}) {
     // probeEndpoint() mengubahnya menjadi panduan lokal yang actionable.
     if (isLocalTarget) {
       logFetch('local-skip-proxy', `target lokal → proksi cloud diabaikan`);
-      throw { type: 'network', message: 'Jaringan langsung ke endpoint lokal gagal.' };
+      throw { type: 'network', message: 'Koneksi langsung ke server lokal gagal.' };
     }
     if (typeof opts.onViaProxy === 'function') opts.onViaProxy();
     logFetch('proxy', `→ ${targetUrl}`);
@@ -246,9 +259,16 @@ export async function providerFetch(targetUrl, init = {}, opts = {}) {
       if (res.type === 'opaque' || res.status === 0) {
         logFetch('opaque', `status=${res.status} type=${res.type}`);
         markWon();                       // menang → proksi (latar dibatalkan)
-        const proxyRes = await toProxy();
-        resolveWinner(proxyRes);         // buka gate → tak pernah undefined
-        return proxyRes;
+        try {
+          const proxyRes = await toProxy();
+          resolveWinner(proxyRes);       // buka gate → tak pernah undefined
+          return proxyRes;
+        } catch (e) {
+          // Proksi juga gagal: settle gate dengan rejection agar cabang yang
+          // kalah TIDAK menunggu selamanya (bug: spinner tanpa akhir).
+          rejectWinner(e);
+          throw e;
+        }
       }
       logFetch('direct-ok', `status=${res.status} type=${res.type} ok=${res.ok}`);
       markWon(true);                       // menang → pertahankan signal agar body bisa dibaca pemanggil
@@ -392,7 +412,7 @@ function authHeader(apiKey) {
 }
 
 // ===== NORMALISASI BASE URL =====
-// User sering menempel domain tanpa skema (mis. "api.electronhub.ai/v1").
+// User sering menempel domain tanpa skema (mis. "openrouter.ai/api/v1").
 // fetch() memperlakukan string seperti itu sebagai path RELATIF ke aplikasi —
 // bukan host tujuan — sehingga probe/chat gagal walau endpoint sehat. Tambahkan
 // skema: host lokal/LAN → http, host publik → https.
@@ -411,8 +431,8 @@ function normalizeUrlCaseAndSlashes(base) {
 }
 // Host lokal/LAN = target pakai skema http:// (bukan https://). Dipakai
 // normalizeEndpointUrl() untuk memilih skema, DAN probeEndpoint() agar error
-// Mixed Content di endpoint lokal diberi panduan SPESIFIK (tunnel HTTPS /
-// ekstensi bridge), bukan pesan jaringan generik yang membingungkan.
+// Mixed Content di endpoint lokal diberi panduan SPESIFIK (tunnel HTTPS),
+// bukan pesan jaringan generik yang membingungkan.
 export function isLocalHost(host) {
   const h = String(host || '').toLowerCase();
   return h === 'localhost' || h === '[::1]' || h === '::1' ||
@@ -501,11 +521,11 @@ function looksLikeHtml(res, text) {
 function htmlPageError(base) {
   const alt = apiHostVariant(base);
   const hint = alt
-    ? ` Coba base URL API: ${alt}.`
-    : ' Gunakan base URL API dari penyedianya (biasanya berakhiran /v1), bukan alamat aplikasi/dashboard.';
+    ? ` Coba alamat API ini: ${alt}.`
+    : ' Pakai alamat API dari penyedianya (biasanya berakhiran /v1), bukan alamat aplikasi/dashboard.';
   return {
     type: 'badrequest',
-    message: `URL ini membuka halaman web (HTML), bukan API model.${hint}`,
+    message: `Alamat ini membuka halaman web, bukan API model.${hint}`,
   };
 }
 
@@ -517,10 +537,10 @@ function htmlPageError(base) {
 export async function probeEndpoint(baseUrl, apiKey = '', kind = 'oi') {
   const base = normalizeEndpointUrl(baseUrl);
   if (!base) {
-    throw { type: 'badrequest', message: 'Masukkan URL endpoint dulu, ya.' };
+    throw { type: 'badrequest', message: 'Masukkan alamat API dulu, ya.' };
   }
   // Host lokal/LAN (http://) rawan Mixed Content di halaman HTTPS: fetch
-  // LANGSUNG diblokir browser dan proksi cloud Vercel tak jangkau
+  // LANGSUNG diblokir browser dan proksi cloud tak jangkau
   // localhost/IP-private. Tandai agar error-nya diberi panduan khusus.
   let hostLocal = false;
   try { hostLocal = isLocalHost(new URL(base).hostname); } catch { hostLocal = false; }
@@ -545,7 +565,7 @@ export async function probeEndpoint(baseUrl, apiKey = '', kind = 'oi') {
         lastErr = {
           type: 'network',
           message:
-            'Tidak bisa terhubung ke endpoint. Periksa URL & koneksi. Bila diakses dari perangkat lain, pastikan server aktif dan CORS diaktifkan.',
+            'Tidak bisa terhubung ke layanan. Periksa alamat & koneksi. Bila diakses dari perangkat lain, pastikan server aktif dan mengizinkan akses browser (CORS).',
         };
         continue; // coba kandidat berikutnya
       }
@@ -581,7 +601,7 @@ export async function probeEndpoint(baseUrl, apiKey = '', kind = 'oi') {
         // 404 saat probe = path/base URL salah, BUKAN model tidak tersedia.
         lastErr = {
           type: 'badrequest',
-          message: `${modelsPath} tidak ditemukan di endpoint (404). Periksa base URL — biasanya berakhiran /v1.`,
+          message: `${modelsPath} tidak ditemukan (404). Periksa alamat API-nya — biasanya berakhiran /v1.`,
         };
         continue;
       }
@@ -601,19 +621,19 @@ export async function probeEndpoint(baseUrl, apiKey = '', kind = 'oi') {
 
   // Endpoint lokal/LAN (http://): di halaman HTTPS, fetch LANGSUNG diblokir
   // Mixed Content dan proksi cloud tak jangkau localhost/IP-private. Beri
-  // panduan SPESIFIK (tunnel HTTPS / ekstensi bridge), bukan pesan jaringan
+  // panduan SPESIFIK (tunnel HTTPS), bukan pesan jaringan
   // generik. Hanya saat kegagalan JARINGAN (bukan dashboard/HTML atau auth).
   if (hostLocal && lastErr && lastErr.type === 'network') {
     throw {
       type: 'local',
       message:
-        'Endpoint lokal (http://...) tidak bisa dibuka langsung dari halaman HTTPS karena browser memblokir "mixed content" (sumber HTTP). 1) Tunnel HTTPS — jalankan ngrok http 1234 atau cloudflared tunnel --url http://localhost:1234 di komputer, lalu tempel URL HTTPS yang muncul sebagai Base URL. 2) Ekstensi Chrome — pasang "BimbingKamu - LM Studio Bridge" untuk koneksi langsung ke local/LAN tanpa terminal.',
+        'Server lokal (http://...) tidak bisa dibuka langsung dari halaman HTTPS — browser memblokirnya. Jalankan tunnel HTTPS di komputer yang menjalankan LM Studio — ngrok http 1234 atau cloudflared tunnel --url http://localhost:1234 — lalu tempel alamat HTTPS yang muncul di kolom "Alamat API".',
     };
   }
 
   throw htmlErr || lastErr || {
     type: 'badrequest',
-    message: 'Endpoint tidak merespons /models maupun /v1/models. Periksa URL-nya.',
+    message: 'Layanan tidak merespons daftar model. Periksa alamat API-nya.',
   };
 }
 
@@ -624,9 +644,9 @@ export async function probeEndpoint(baseUrl, apiKey = '', kind = 'oi') {
 export async function fetchContextLimit(provider, apiKey, model) {
   if (!provider || !provider.baseUrl || !model) return null;
   const adapter = getAdapter(provider.kind);
-  // Provider dengan contextStrategy 'none' (mis. ElectronHub) tak pernah probe
-  // /api/v0/models → langsung kembalikan null (UI tampilkan "-"). Ini menjaga bug
-  // lama: ElectronHub JANGAN pakai /api/v0/models.
+  // Provider dengan contextStrategy 'none' tak pernah probe /api/v0/models →
+  // langsung null (UI menampilkan "-"). Berguna untuk endpoint yang tidak
+  // menyediakan REST context window.
   if (provider.contextStrategy === 'none') return null;
   try {
     // providerFetch → fallback ke /api/proxy bila fetch LANGSUNG gagal (PNA/CORS
@@ -686,17 +706,23 @@ async function probeLMStudio(provider, apiKey) {
 // Ambil daftar ID model chat-capable dari endpoint provider.
 // GET ${baseUrl}${modelsPath} → filter model yang bisa chat, dedup per id.
 // Id model dari respons /models endpoint (pemilik endpoint bisa mengontrol
-// isinya). Disair lewat whitelist karakter agar aman disisipkan ke <option>
-// tanpa escape — karakter yang tersisa [A-Za-z0-9._/-] tidak ada yang spesial
-// untuk HTML, jadi tak bisa tembus XSS. Dipakai di dropdown model (app.js) dan
-// onboarding (ui.js), keduanya mengambil hasil fungsi ini.
+// isinya). Sanitasi HANYA membuang karakter kontrol & karakter berbahaya HTML
+// (< > " ' ` & backslash) — KARAKTER ID YANG SAH DIPERTAHANKAN UTUH: LM Studio
+// memakai tag quant ':8b' / '@q4_k_m', OpenRouter ':free', sebagian endpoint
+// memakai '+' dan '='. Dulu whitelist[^A-Za-z0-9._/-] MERUSAK id itu (dihapus
+// diam-diam) sehingga chat mengirim model id yang TIDAK ADA di endpoint →
+// 400 "Invalid model". Perlindungan XSS pindah ke titik render: nilai
+// <option> di-escape (escapeAttr/escapeHtml di app.js, escape lokal di ui.js).
 export function sanitizeModelId(id) {
-  return String(id ?? '').replace(/[^A-Za-z0-9._/-]/g, '');
+  return String(id ?? '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f<>"'`&\\]/g, '')
+    .trim();
 }
 
 export async function listModels(apiKey, provider, opts = {}) {
   if (!provider || !provider.baseUrl) {
-    throw { type: 'badrequest', message: 'Endpoint belum terdaftar. Tambahkan endpoint dulu.' };
+    throw { type: 'badrequest', message: 'Layanan belum terdaftar. Tambahkan dulu di Pengaturan.' };
   }
   let res;
   try {
@@ -764,7 +790,7 @@ export async function chatCompletion({
   maxTokens = 8192, thinkingLevel, grounding, onDelta, signal,
 }) {
   if (!provider || !provider.baseUrl) {
-    throw { type: 'badrequest', message: 'Pilih endpoint & model dulu, ya.' };
+    throw { type: 'badrequest', message: 'Pilih layanan AI dan model dulu, ya.' };
   }
   const adapter = getAdapter(provider.kind);
   // Claude native → jalur khusus (auth x-api-key + anthropic-version, /messages,
@@ -794,9 +820,13 @@ export async function chatCompletion({
     body.stream = true;
     body.stream_options = { include_usage: true }; // minta usage di chunk terakhir
   }
-  if (provider.supportsThinking && thinkingLevel) {
-    body.generationConfig = { thinkingLevel }; // hanya provider yang mendukung
-  }
+  // CATATAN (audit P1-5): `generationConfig: { thinkingLevel }` DIHAPUS.
+  // Field ini bentuk Gemini-native, tapi shape-nya salah (Gemini pakai
+  // generationConfig.thinkingConfig.thinkingBudget, bukan thinkingLevel ber-string)
+  // dan endpoint [OI]-compatible lain (LM Studio, Groq, sebagian model OpenRouter)
+  // MENOLAK field asing dengan 400. Dulu tidak pernah dilucutkan cascade retry →
+  // 400 persisten yang tersamar jadi "Permintaan ditolak endpoint". Kontrol
+  // penalaran tinggal pada prompt (system prompt per mode) — perilaku UI tak berubah.
 
   let res;
   let streamStripped = false; // fallback 413: stream dilepas → respons jadi JSON
@@ -808,7 +838,7 @@ export async function chatCompletion({
   } catch (err) {
     // Pastikan error TIDAK keluar mentah (type undefined → "error API: undefined").
     // providerFetch melempar exception bila proksi /api/proxy juga gagal (mis.
-    // endpoint memblokir server Vercel). Map ke network + pertahankan pesan asli.
+    // endpoint memblokir server proksi). Map ke network + pertahankan pesan asli.
     if (!err || typeof err.type === 'undefined') {
       const mapped = mapApiError(0);
       throw { ...mapped, message: (err && err.message) ? err.message : mapped.message };
@@ -831,6 +861,15 @@ export async function chatCompletion({
     // max_tokens terlalu besar) atau body terlalu besar (413). Lucuti field
     // bertahap, satu per satu, sampai request diterima atau tak ada lagi yang
     // bisa dilepas — endpoint yang kompatibel tak pernah menyentuh jalur ini.
+    // Audit P2-10: (a) error SEMANTIK ("invalid model", "unknown model", dll.)
+    // tidak akan membaik dengan melucut field → berhenti dini agar tidak
+    // mengulang request berbayar; (b) apiMessage PERTAMA (penyebab utama)
+    // dipertahankan — dulu tertimpa pesan generik dari percobaan retry.
+    const SEMANTIC_400_RE = /invalid model|unknown model|model_not_found|model.*(not|tidak).*(found|ada|tersedia)|no such model|does not exist/i;
+    if (res.status === 400 && SEMANTIC_400_RE.test(apiMessage || '')) {
+      throw { ...mapApiError(400, apiMessage, rawText) };
+    }
+    const firstApiMessage = apiMessage;
     let cur = body;
     for (let attempt = 0; attempt < 5; attempt++) {
       if (res.ok || !(res.status === 400 || res.status === 413 || res.status === 422)) break;
@@ -864,10 +903,14 @@ export async function chatCompletion({
             });
       } catch { throw { ...mapApiError(0) }; }
       if (!res.ok) {
-        try { apiMessage = (await res.json()).error?.message || apiMessage; } catch {}
+        try { const j = JSON.parse(await res.text()); if (j?.error?.message) apiMessage = j.error.message; } catch {}
       }
     }
-    if (!res.ok) throw { ...mapApiError(res.status, apiMessage, rawText) };
+    // Audit P2-10: bila retry gagal juga, laporkan PESAN PERTAMA (penyebab
+    // utama) — bukan pesan generik dari percobaan retry terakhir.
+    if (!res.ok) {
+      throw { ...mapApiError(res.status, apiMessage || firstApiMessage, rawText), apiMessage: apiMessage || firstApiMessage };
+    }
   }
 
   // Jalur SSE: baca data: {...} per chunk, akumulasi delta.content,
@@ -917,7 +960,7 @@ export async function anthropicChat({
   maxTokens = 8192, thinkingLevel, grounding, onDelta, signal,
 }) {
   if (!provider || !provider.baseUrl) {
-    throw { type: 'badrequest', message: 'Pilih endpoint & model dulu, ya.' };
+    throw { type: 'badrequest', message: 'Pilih layanan AI dan model dulu, ya.' };
   }
   // Bangun pesan Anthropic: [{ role, content: [{ type:'text', text }] }].
   const history = (contents || []).map((m) => ({
@@ -936,7 +979,18 @@ export async function anthropicChat({
 
   const body = { model, messages: history, max_tokens: Number(maxTokens) || 8192 };
   if (systemPrompt) body.system = systemPrompt;
-  if (thinkingLevel) body.thinking = { thinking_bits: Number(thinkingLevel) };
+  // Audit P1-6: dulu `thinking_bits: Number(thinkingLevel)` — thinkingLevel dari
+  // UI berupa STRING 'low'/'medium' → Number() = NaN → JSON "thinking_bits":null
+  // → 400 dari API Anthropic. Petakan ke budget_tokens (kontrak Anthropic:
+  // extended thinking pakai thinking.budget_tokens, minimal 1024 dan HARUS
+  // < max_tokens); bila budget tidak muat dalam max_tokens → jangan kirim
+  // thinking sama sekali (fallback aman, jawaban tetap jalan).
+  const THINKING_BUDGET = { low: 1024, medium: 4096, high: 8192 };
+  const budget = THINKING_BUDGET[String(thinkingLevel || '').toLowerCase()];
+  const maxTok = body.max_tokens;
+  if (budget && Number(maxTok) > budget) {
+    body.thinking = { type: 'enabled', budget_tokens: budget };
+  }
 
   const wantStream = typeof onDelta === 'function';
   if (wantStream) body.stream = true;
@@ -1074,7 +1128,7 @@ export async function providerChat(providerName, params = {}) {
   const providers = resolveProviders(params.customProviders || []);
   const provider = providers[providerName];
   if (!provider) {
-    throw { type: 'badrequest', message: 'Endpoint tidak dikenal. Pilih endpoint dulu di header chat.' };
+    throw { type: 'badrequest', message: 'Layanan tidak dikenal. Pilih layanan AI dulu di Pengaturan.' };
   }
   return chatCompletion({ provider, ...params });
 }

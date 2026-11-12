@@ -446,41 +446,6 @@
   line-height: 1.5;
 }
 
-/* Status ekstensi bridge: terlihat tanpa membuka DevTools. Titik warna
-   mengikuti warna teks, jadi status tetap terbaca tanpa bergantung warna. */
-.bridge-status {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  margin: 0;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-2);
-  font-size: var(--text-caption);
-  line-height: 1.5;
-  color: var(--color-text-secondary);
-}
-.bridge-status::before {
-  content: "";
-  flex: none;
-  width: 8px;
-  height: 8px;
-  margin-top: 0.35em;
-  border-radius: 999px;
-  background: currentColor;
-}
-.bridge-status.is-ok {
-  color: #047857;
-  background: #ECFDF5;
-  border-color: #A7F3D0;
-}
-.bridge-status.is-warn {
-  color: #B45309;
-  background: #FFFBEB;
-  border-color: #FDE68A;
-}
-
 .field__hint a {
   color: var(--color-accent);
   text-decoration: underline;
@@ -601,7 +566,7 @@
 }
 
 .provider-item__badge {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -1550,6 +1515,39 @@
   border-radius: 999px;
 }
 
+/* Pilihan layanan bawaan di langkah 1 onboarding. Tombol ukuran jempol
+   (min 44px) supaya mudah ditekan di HP, dan tetap ringkas saat dibungkus. */
+.onboard-providers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.onboard-provider {
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-family: var(--font-sans);
+  font-size: var(--text-secondary);
+  font-weight: 500;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.onboard-provider:hover {
+  background: var(--color-surface-2);
+}
+
+.onboard-provider.is-active {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+  color: var(--color-accent-hover);
+  font-weight: 600;
+}
+
 @keyframes modal-fade {
   from {
     opacity: 0;
@@ -1929,6 +1927,15 @@ input, textarea, select,
   .composer { padding: var(--space-2) var(--space-3); }
   .composer__inner { gap: var(--space-2); }
   .composer textarea { font-size: 16px; } /* cegah zoom otomatis iOS */
+
+  /* ===== TARGET SENTUH (WCAG 2.5.8 butuh 24px; 44px nyaman untuk jempol) =====
+     Hanya kontrol yang sering ditekan siswa. Tombol teks kecil di daftar
+     layanan ikut dinaikkan agar tidak salah tekan "Hapus". */
+  .btn--icon { width: 44px; height: 44px; }
+  .select, .input { min-height: 44px; }
+  .provider-item__actions .btn--sm { min-height: 40px; }
+  .setup-guide__toggle { min-height: 44px; }
+  .modal .btn { height: auto; min-height: 44px; }
 }
 
 /* Tablet kecil (641–820px): brand lebih ringkas */

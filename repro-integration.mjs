@@ -1,17 +1,18 @@
 // =========================================================
 // BimbingKamu — INTEGRATION TEST (production logic, real browser).
 // Serves REAL js/providers.js + js/api.js as browser modules and the
-// REAL api/proxy/index.js handler. Page imports probeEndpoint/listModels
-// from the real providers.js and calls them against REAL ngrok.
-// Exercises the actual PNA -> providerFetch fallback path in headed Chrome.
+// REAL functions/api/proxy.js (Cloudflare Pages Function) core.
+// Page imports probeEndpoint/listModels from the real providers.js and
+// calls them against REAL ngrok. Exercises the actual PNA ->
+// providerFetch fallback path in headed Chrome.
 // Run: NGROK_BASE=... node repro-integration.mjs
 // =========================================================
 import { chromium } from 'playwright-core';
 import http from 'node:http';
+import { Readable } from 'node:stream';
 import { createRequire } from 'node:module';
+import { proxyCore } from './functions/api/proxy.js';
 const require = createRequire(import.meta.url);
-const proxyModule = require('./api/proxy/index.js');
-const proxyHandler = proxyModule.default || proxyModule;
 
 const NGROK = process.env.NGROK_BASE || 'https://oyster-regroup-neatness.ngrok-free.dev';
 const CHROME_EXE = process.env.CHROME_EXE || '/Users/deddybathara/Library/Caches/ms-playwright/chromium-1254/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
@@ -21,7 +22,26 @@ const read = (p) => new Promise((r, j) => require('node:fs').readFile(p, 'utf8',
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
   const path = u.pathname;
-  if (path === '/api/proxy') { proxyHandler(req, res).catch((e) => { try { if (!res.headersSent) res.writeHead(500); } catch {} }); return; }
+  if (path === '/api/proxy') {
+    try {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const method = (req.method || 'GET').toUpperCase();
+      const request = new Request(`http://local${req.url}`, {
+        method,
+        headers: req.headers,
+        body: method === 'GET' || method === 'HEAD' ? undefined : Buffer.concat(chunks),
+      });
+      const response = await proxyCore(request);
+      res.writeHead(response.status, Object.fromEntries(response.headers));
+      if (response.body) Readable.fromWeb(response.body).pipe(res);
+      else res.end(await response.text());
+    } catch (e) {
+      if (!res.headersSent) res.writeHead(500);
+      res.end(String((e && e.message) || e));
+    }
+    return;
+  }
   // Backend model list untuk endpoint ngrok. TIDAK mengirim header CORS agar
   // jalur LANGSUNG di browser tetap diblokir (PNA/CORS) → memaksa fallback ke
   // /api/proxy (server-side fetch), yaitu jalur PNA yang benar-benar diuji.

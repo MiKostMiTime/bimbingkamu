@@ -1,5 +1,5 @@
 // BimbingKamu — PWA CACHE LOGIC (murni, teruji di Node; dipakai sw.js sebagai ESM worker).
-export const CACHE_VERSION = 'bimbingkamu-shell-v14';
+export const CACHE_VERSION = 'bimbingkamu-shell-v16';
 export const OLD_CACHE_PREFIX = 'bimbingkamu-shell-';
 
 export const PRECACHE_ASSETS = [
@@ -29,7 +29,7 @@ export function selectStrategy(url, origin) {
   const u = typeof url === 'string' ? url : (url && url.href) || '';
   if (/\/sw\.js(\?|#|$)/.test(u)) return 'network-only'; // SW sendiri → selalu network
   // API same-origin (mis. /api/proxy) → network-first: selalu data segar dari
-  // server Vercel, cache hanya sebagai cadangan bila proxy cold-start/offline.
+  // server, cache hanya sebagai cadangan bila proxy cold-start/offline.
   // Tanpa ini, cache-first bisa mengabdi error page dingin selamanya sampai
   // cache dibump → net::ERR_FAILED persisten di banyak endpoint.
   let path = u;

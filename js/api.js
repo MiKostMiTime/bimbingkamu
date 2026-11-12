@@ -8,20 +8,20 @@
 // Ubah status HTTP / isi body error menjadi pesan ramah.
 // Status 0 dipakai untuk error jaringan (fetch gagal).
 const MESSAGES = {
-  auth: 'Kunci API tidak valid untuk endpoint ini. Periksa kembali kunci atau kosongkan bila endpoint lokal.',
-  payment: 'Kredit atau metode pembayaran endpoint belum diatur (mis. OpenRouter butuh kredit). Tambahkan kredit / billing di settings provider, lalu pilih model dan coba lagi.',
-  lmstudioToken: 'LM Studio ini mewajibkan token. Buka LM Studio → Developer → Server Settings → Manage Tokens, buat token baru, lalu tempel di kolom Kunci API endpoint ini.',
-  quota: 'Kuota/rate limit endpoint tercapai. Coba lagi beberapa saat.',
-  network: 'Tidak bisa terhubung ke endpoint. Periksa koneksi & URL. Untuk endpoint lokal (LM Studio/Ollama), aktifkan CORS di server. Untuk tunnel (ngrok/localtunnel), pastikan tunnel masih aktif.',
-  model: 'Model ini tidak tersedia di endpoint. Coba pilih model lain dari daftar.',
-  server: 'Endpoint sedang sibuk. Coba lagi beberapa saat.',
+  auth: 'Kunci API tidak valid untuk layanan ini. Periksa kembali kuncinya, atau kosongkan bila server lokal tidak butuh kunci.',
+  payment: 'Kredit atau metode pembayaran layanan belum diatur (mis. OpenRouter butuh kredit). Tambahkan kredit di halaman billing penyedia, lalu pilih model dan coba lagi.',
+  lmstudioToken: 'LM Studio ini mewajibkan token. Buka LM Studio → Developer → Server Settings → Manage Tokens, buat token baru, lalu tempel di kolom Kunci API layanan ini.',
+  quota: 'Batas pemakaian layanan tercapai. Coba lagi beberapa saat.',
+  network: 'Tidak bisa terhubung ke layanan. Periksa koneksi & alamat API. Untuk server lokal (LM Studio/Ollama), aktifkan CORS di servernya. Untuk tunnel (ngrok/localtunnel), pastikan tunnel masih aktif.',
+  model: 'Model ini tidak tersedia di layanan. Coba pilih model lain dari daftar.',
+  server: 'Layanan sedang sibuk. Coba lagi beberapa saat.',
   unknown: 'Terjadi kesalahan tak terduga. Coba lagi beberapa saat.',
-  badrequest: 'Permintaan ditolak endpoint. Kemungkinan model ini tidak kompatibel dengan format percakapan, coba gunakan model lain atau kurangi materi.',
-  toobig: 'Materi atau riwayat percakapan terlalu besar untuk dikirim ke endpoint. Kurangi ukuran materi (hasil upload) atau ringkas percakapan, lalu coba lagi.',
+  badrequest: 'Permintaan ditolak layanan. Kemungkinan model ini tidak cocok dengan format percakapan — coba model lain atau kurangi materi.',
+  toobig: 'Materi atau riwayat percakapan terlalu besar untuk dikirim. Kurangi ukuran materi atau ringkas percakapan, lalu coba lagi.',
   truncated: 'Jawaban terpotong karena terlalu panjang. Minta tutor melanjutkan.',
-  blocked: 'Endpoint memblokir akses dari server Vercel (Cloudflare 403 "Attention Required! / You have been blocked"). Ini BUKAN masalah kunci API — endpoint belakang proteksi bot Cloudflare yang memblokir IP datacenter Vercel/AWS. Hubungi pemilik endpoint untuk memasukkan IP Vercel (54.175.0.0/16) ke allowlist Cloudflare, atau matikan "Attention Required!" bot challenge di path API.',
-  permission: 'Endpoint menolak akses karena model belum diaktifkan atau scope kunci kurang (bukan sekadar kunci salah). Aktifkan model & beri permission yang diperlukan di dashboard provider, lalu tempel kembali kuncinya.',
-  deployment: 'Endpoint sedang dalam proses deployment / pembaruan (menyiapkan model). Tunggu beberapa saat lalu coba lagi; bila terus muncul, periksa status layanan provider.',
+  blocked: 'Layanan memblokir akses lewat server perantara (Cloudflare 403 "Attention Required! / You have been blocked"). Ini BUKAN masalah kunci API — layanan di balik proteksi bot Cloudflare menolak IP datacenter. Hubungi pemilik layanan untuk mengizinkan rentang IP Cloudflare (https://www.cloudflare.com/ips/), atau matikan tantangan bot di path API-nya.',
+  permission: 'Layanan menolak akses karena model belum diaktifkan atau izin kuncinya kurang (bukan sekadar kunci salah). Aktifkan model & beri izin yang diperlukan di dashboard penyedia, lalu tempel kembali kuncinya.',
+  deployment: 'Layanan sedang diperbarui (menyiapkan model). Tunggu beberapa saat lalu coba lagi; bila terus muncul, periksa status layanan penyedia.',
 };
 
 // Pola untuk memperhalus klasifikasi dari teks error API (lebih akurat

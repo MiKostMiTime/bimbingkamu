@@ -1,0 +1,9 @@
+# BimbingKamu — Cloudflare Pages redirects
+# SPA fallback: hanya request NAVIGASI (dokumen) yang diarahkan ke index.html.
+# Penting (root cause 501, audit P0-1): request /api/* dan aset yang benar-benar
+# ada di filesystem TIDAK boleh tertelan rewrite. Cloudflare Pages mengecek
+# aset statis + Functions dulu sebelum rules file ini, jadi /api/proxy aman.
+# Proxy header rule "200" tanpa proxy: fallback 404 → index.html hanya untuk
+# path yang tidak ada, dan karena Pages Function /api/proxy lebih diprioritaskan,
+# POST ke API tidak pernah diproyeksikan ke index.html.
+/* /index.html 200

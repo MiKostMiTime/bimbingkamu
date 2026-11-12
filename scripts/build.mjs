@@ -7,8 +7,8 @@
 // Cara pakai:  npm run build
 // Output:      js/app.bundle.js   (semua modul app → 1 file)
 //              css/styles.min.css (variables+main+components)
-// Catatan:     hasil BUILD harus DI-COMMIT agar Vercel
-//              "push -> deploy" tetap jalan tanpa langkah CI.
+// Catatan:     hasil BUILD harus DI-COMMIT agar deploy statis
+//              (Cloudflare Pages) tetap jalan tanpa langkah CI.
 // =========================================================
 import { build, transform } from 'esbuild';
 import { readFileSync, writeFileSync } from 'node:fs';

@@ -11,7 +11,8 @@
   "scripts": {
     "test": "node --test",
     "build": "if [ -f scripts/build.mjs ]; then node scripts/build.mjs; else echo \"static: bundle prebuilt, skip build\"; fi",
-    "predeploy": "node scripts/predeploy.mjs"
+    "check:bundle": "node scripts/bundle-check.mjs",
+    "check": "node scripts/bundle-check.mjs --check"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

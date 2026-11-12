@@ -1,0 +1,31 @@
+# BimbingKamu — Cloudflare Pages headers
+# Konfigurasi header Cloudflare Pages. Ditempatkan di root output (repo root).
+#
+# Security headers: semua rute.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+
+# Aset statik ber-hash: immutable setahun.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+/vendor/*
+  Cache-Control: public, max-age=31536000, immutable
+/css/*
+  Cache-Control: public, max-age=31536000, immutable
+/js/*
+  Cache-Control: public, max-age=31536000, immutable
+/icons/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Service worker & manifest: selalu segar agar update PWA sampai.
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
+/manifest.json
+  Cache-Control: public, max-age=86400
+
+# API (Pages Function /api/proxy): jangan pernah cache.
+/api/*
+  Cache-Control: public, max-age=0, must-revalidate

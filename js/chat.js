@@ -554,7 +554,7 @@ export function showWebSearchStatus(col, status) {
   const p = document.createElement('p');
   p.className = 'msg__sources-title';
   p.textContent = status === 'unsupported'
-    ? 'Sumber web not didukung endpoint ini.'
+    ? 'Pencarian web tidak didukung layanan ini.'
     : 'Tidak ada sumber web.';
   box.appendChild(p);
   return box;
@@ -565,7 +565,7 @@ export function webSearchStatusText(state) {
   return {
     loading: 'Mencari sumber web…',
     'not-found': 'Tidak ada sumber web.',
-    unsupported: 'Sumber web not didukung endpoint ini.',
+    unsupported: 'Pencarian web tidak didukung layanan ini.',
   }[state];
 }
 
@@ -638,7 +638,7 @@ export function renderEmptyState(root, { onStart, onOpenSettings, status } = {})
     `${label}<span class="sr-only">${done ? ' (sudah)' : ' (belum)'}</span></li>`;
   const checklist = status
     ? `<ul class="empty-state__checklist" aria-label="Persiapan">
-         ${item(status.keyReady, 'Endpoint & model')}
+         ${item(status.keyReady, 'Layanan AI & model')}
          ${item(status.materiReady, 'File materi')}
        </ul>`
     : '';
@@ -646,7 +646,7 @@ export function renderEmptyState(root, { onStart, onOpenSettings, status } = {})
     <div class="empty-state__icon" aria-hidden="true">${EMPTY_ICON}</div>
     <h2 class="empty-state__title">Mulai belajar dengan BimbingKamu</h2>
     <p class="empty-state__text">
-      Siapkan dua hal di Pengaturan (gear, kanan atas): hubungkan endpoint & pilih model, lalu lampirkan file materi. Setelah itu tanya
+      Siapkan dua hal di Pengaturan (gear, kanan atas): pilih layanan AI & model, lalu lampirkan file materi. Setelah itu tanya
       apa saja. Tutor akan menjelaskan materimu, mengecek pemahamanmu, dan
       membimbingmu sampai paham.
     </p>

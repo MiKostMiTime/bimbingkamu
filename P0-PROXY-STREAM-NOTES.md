@@ -1,5 +1,7 @@
 # P0 — Streaming Proxy (catatan eksekusi)
 
+> **Catatan historis:** dokumen ini ditulis saat deploy masih di Vercel. Deploy kini di Cloudflare Pages — lihat README.md.
+
 **Tujuan:** `/api/proxy` selama ini mem-buffer seluruh respons (`net.text()`) lalu
 mengembalikannya sebagai envelope JSON. Untuk chat streaming (SSE) ini membunuh
 delta live + membatasi di 60s serverless Vercel.

@@ -6,6 +6,7 @@ import { storage } from './storage.js';
 import { getModeLabel, getLevelLabel } from './config.js';
 import { buildStudyCard, injectCardStyles, loadHtml2canvas } from './card.js';
 import { attachModelSearch } from './model-search.js';
+import { PROVIDER_DEFS } from './adapters.js';
 
 // ===== IKON (inline SVG) =====
 const ICONS = {
@@ -175,8 +176,8 @@ export function showConfirm({ title, text, confirmLabel = 'Ya, lanjutkan', kind 
 // ===== ONBOARDING (3 LANGKAH) =====
 const ONBOARDING_STEPS = [
   {
-    title: 'Hubungkan endpoint AI',
-    text: 'Masukkan Base URL API endpoint [OI]-compatible (mis. http://127.0.0.1:1234 untuk LM Studio, atau https://api.electronhub.ai/v1). Gunakan alamat API, bukan halaman dashboard/aplikasi. Daftar model diambil otomatis dari endpoint. Kunci API hanya perlu bila endpoint-mu butuh auth.',
+    title: 'Pilih layanan AI',
+    text: 'Pilih layanan yang sudah tersedia, atau isi alamat API sendiri (kompatibel dengan OpenAI). Kunci API hanya perlu bila layanan memintanya — biasanya ada di menu API keys akunmu.',
   },
   {
     title: 'Isi materi belajarmu',
@@ -227,20 +228,29 @@ export function showOnboarding({ onComplete, onSkip, onConnect, onModel }) {
   }
   document.addEventListener('keydown', onKey);
 
-  // Langkah 0: form koneksi endpoint. onConnect({baseUrl, name, key}) →
-  // Promise<string[]> daftar id model; UI menampilkan select model.
+  // Langkah 0: pilih layanan bawaan ATAU isi alamat API sendiri.
+  // onConnect({baseUrl, name, key}) → Promise<string[]> daftar id model.
   function renderConnectForm() {
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    // Tombol cepat: sekali klik mengisi alamat + nama layanan bawaan, jadi siswa
+    // hanya perlu menempel kunci API. Alamat tetap bisa diedit manual.
+    const presets = PROVIDER_DEFS.map(
+      (d) => `<button type="button" class="onboard-provider" data-base-url="${esc(d.baseUrl)}" data-name="${esc(d.name)}">${esc(d.name)}</button>`
+    ).join('');
     body.innerHTML = `
       <div class="modal__header" style="margin-bottom:0">
         <h2 class="modal__title">${ONBOARDING_STEPS[0].title}</h2>
       </div>
       <p class="modal__text" style="margin-top:12px">${ONBOARDING_STEPS[0].text}</p>
+      <div class="onboard-providers" role="group" aria-label="Layanan AI bawaan">${presets}</div>
       <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
-        <input id="onboardUrl" class="input" type="text" placeholder="http://127.0.0.1:1234" autocomplete="off" spellcheck="false" />
-        <input id="onboardName" class="input" type="text" placeholder="Nama endpoint (opsional)" autocomplete="off" />
-        <input id="onboardKey" class="input" type="password" placeholder="Kunci API (opsional)" autocomplete="off" />
+        <label class="field__label" for="onboardUrl">Alamat API (URL)</label>
+        <input id="onboardUrl" class="input" type="text" placeholder="https://openrouter.ai/api/v1" autocomplete="off" spellcheck="false" />
+        <p class="field__hint">Untuk LM Studio di komputer sendiri, isi <code>http://localhost:1234</code>. Pakai alamat API-nya, bukan halaman dashboard.</p>
+        <input id="onboardName" class="input" type="text" placeholder="Nama layanan (opsional)" aria-label="Nama layanan" autocomplete="off" />
+        <input id="onboardKey" class="input" type="password" placeholder="Kunci API (opsional)" aria-label="Kunci API" autocomplete="off" />
         <div style="display:flex;gap:8px;align-items:center">
-          <button id="onboardConnect" class="btn btn--secondary btn--sm" type="button">Hubungkan &amp; ambil model</button>
+          <button id="onboardConnect" class="btn btn--secondary" type="button">Hubungkan</button>
           <span id="onboardStatus" style="font-size:var(--text-caption);color:var(--color-text-secondary)"></span>
         </div>
         <div id="onboardModelWrap" style="display:none">
@@ -249,28 +259,53 @@ export function showOnboarding({ onComplete, onSkip, onConnect, onModel }) {
         </div>
       </div>
     `;
+    const urlInput = body.querySelector('#onboardUrl');
+    const nameInput = body.querySelector('#onboardName');
+    const keyInput = body.querySelector('#onboardKey');
+    const chips = Array.from(body.querySelectorAll('.onboard-provider'));
+    const markChip = (active) => chips.forEach((c) => c.classList.toggle('is-active', c === active));
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        markChip(chip);
+        urlInput.value = chip.dataset.baseUrl || '';
+        nameInput.value = chip.dataset.name || '';
+        keyInput.focus();
+      });
+    });
+    // Mengetik alamat sendiri = tidak ada lagi chip yang mewakili.
+    urlInput.addEventListener('input', () => markChip(null));
+
     const btn = body.querySelector('#onboardConnect');
     const status = body.querySelector('#onboardStatus');
     btn.addEventListener('click', async () => {
-      const baseUrl = body.querySelector('#onboardUrl').value.trim();
-      const name = body.querySelector('#onboardName').value.trim();
-      const key = body.querySelector('#onboardKey').value.trim();
-      if (!baseUrl) { status.textContent = 'Masukkan URL endpoint dulu.'; return; }
+      const baseUrl = urlInput.value.trim();
+      const name = nameInput.value.trim();
+      const key = keyInput.value.trim();
+      if (!baseUrl) { status.textContent = 'Isi alamat API dulu, ya.'; return; }
       btn.disabled = true;
       status.textContent = 'Menghubungkan…';
       try {
-        const models = await onConnect({ baseUrl, name, key });
-        if (!models.length) throw { message: 'Endpoint hidup tapi tidak punya model chat.' };
+        const result = await onConnect({ baseUrl, name, key });
+        // Kompatibel dua bentuk: string[] (lama) atau { ids, options } (baru,
+        // label kaya: Gratis/konteks/harga).
+        const options = Array.isArray(result)
+          ? result.map((id) => ({ id, label: id }))
+          : (result && Array.isArray(result.options) ? result.options : []);
+        if (!options.length) throw { message: 'Layanan terhubung tapi tidak menyediakan model chat.' };
         const wrap = body.querySelector('#onboardModelWrap');
         const sel = body.querySelector('#onboardModel');
         wrap.style.display = '';
-        sel.innerHTML = models.map((id) => `<option value="${id}">${id}</option>`).join('');
+        // Escape saat render (id model dipertahankan utuh setelah sanitasi
+        // longgar di providers.js) — cegah injeksi HTML tanpa merusak id.
+        sel.innerHTML = options
+          .map((o) => `<option value="${esc(o.id)}">${esc(o.label || o.id)}</option>`)
+          .join('');
         // Filter pencarian manual untuk dropdown model onboarding.
         attachModelSearch(sel);
         connected = true;
-        status.textContent = `Terhubung. ${models.length} model tersedia.`;
+        status.textContent = `Terhubung. ${options.length} model tersedia.`;
       } catch (err) {
-        status.textContent = (err && err.message) || 'Gagal terhubung. Periksa URL/kunci.';
+        status.textContent = (err && err.message) || 'Gagal terhubung. Periksa alamat/kunci.';
         btn.disabled = false;
       }
     });
@@ -316,7 +351,7 @@ export function showOnboarding({ onComplete, onSkip, onConnect, onModel }) {
     next.addEventListener('click', () => {
       if (step === 0 && onConnect && !connected) {
         const st = body.querySelector('#onboardStatus');
-        if (st) st.textContent = 'Hubungkan endpoint & pilih model dulu, ya.';
+        if (st) st.textContent = 'Pilih layanan lalu klik Hubungkan dulu, ya.';
         return;
       }
       if (step === 0 && connected) {
