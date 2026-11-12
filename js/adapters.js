@@ -37,7 +37,7 @@ export const ADAPTERS = {
     defaultBaseUrl: 'https://api.anthropic.com/v1',
     modelsPath: '/models',
     chatPath: '/messages',
-    supportsGrounding: false, // grounding via tools → Fase 3
+    supportsGrounding: true, // pencarian web lewat alat web_search (tool use native)
     supportsThinking: true,
     contextStrategy: 'probe',
     authHeaders(apiKey) { return anthropicAuthHeaders(apiKey); },
@@ -130,13 +130,16 @@ export function normalizeAnthropicText(content) {
 // ===== ANTHROPIC: STREAMING SSE =====
 // Format streaming Claude (SSE):
 //   message_start      → usage.input_tokens/output_tokens/total_tokens
-//   content_block_delta→ delta.type='text_delta', delta.text
+//   content_block_start→ blok text / tool_use (id + name)
+//   content_block_delta→ text_delta (teks) atau input_json_delta (argumen alat)
+//   message_delta      → usage penutup
 //   message_end        → usage lengkap
-// Mengembalikan { text, usage } dengan usage = { input_tokens, output_tokens, total_tokens }.
+// Mengembalikan { text, usage, toolCalls }.
 export async function readSSEAnthropic(res, onDelta, signal) {
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = '', text = '', usage = null;
+  const toolBlocks = new Map(); // index → { id, name, json }
   const handle = (payload) => {
     if (payload === '[DONE]') return;
     let ev; try { ev = JSON.parse(payload); } catch { return; } // baris rusak → lewati
@@ -144,10 +147,20 @@ export async function readSSEAnthropic(res, onDelta, signal) {
     // message.usage (message_end). Ambil yang terakhir muncul → paling lengkap.
     const u = ev && (ev.usage || (ev.message && ev.message.usage));
     if (u) usage = u;
+    // Blok alat: id + nama di content_block_start, argumen mengalir sebagai
+    // potongan JSON di input_json_delta.
+    const block = ev && ev.content_block;
+    if (ev && ev.type === 'content_block_start' && block && block.type === 'tool_use') {
+      toolBlocks.set(ev.index, { id: block.id || '', name: block.name || '', json: '' });
+    }
     const delta = ev.delta;
     if (delta && delta.type === 'text_delta' && typeof delta.text === 'string' && delta.text) {
       text += delta.text;
       if (typeof onDelta === 'function') onDelta(text);
+    }
+    if (delta && delta.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
+      const tool = toolBlocks.get(ev.index);
+      if (tool) tool.json += delta.partial_json;
     }
   };
   try {
@@ -168,8 +181,19 @@ export async function readSSEAnthropic(res, onDelta, signal) {
     const tail = buf.trim();
     if (tail.startsWith('data:')) handle(tail.slice(5).trim());
   } catch (err) {
-    if (text) return { text, usage, sources: [] }; // stream putus → pakai yang sudah datang
+    if (text) return { text, usage, sources: [], toolCalls: [] }; // stream putus → pakai yang sudah datang
     throw { type: 'network', message: 'Koneksi streaming Claude terputus.' };
   }
-  return { text, usage, sources: [] };
+  const toolCalls = [...toolBlocks.values()]
+    .filter((b) => b.name)
+    .map((b) => {
+      let input = {};
+      try {
+        input = b.json ? JSON.parse(b.json) : {};
+      } catch {
+        input = {};
+      }
+      return { id: b.id, name: b.name, input };
+    });
+  return { text, usage, sources: [], toolCalls };
 }

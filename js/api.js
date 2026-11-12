@@ -140,14 +140,25 @@ export function truncateSnippet(text, max = 200) {
   return s.length > max ? `${s.slice(0, max).trimEnd()}…` : s;
 }
 
-// Klasifikasi state sumber web PER-JAWaban (logika murni, UI hanya membaca hasil):
-//   'ok'        → websearch ON + grounding didukung + ada sumber
-//   'not-found' → websearch ON + grounding didukung + tidak ada sumber
-//   'unsupported'→ websearch ON + grounding TIDAK didukung
-export function classifyWebSearch({ webSearch, supportsGrounding, sources }) {
-  if (!webSearch) return 'not-found';
-  if (!supportsGrounding) return 'unsupported';
-  return Array.isArray(sources) && sources.length ? 'ok' : 'not-found';
+// Klasifikasi state sumber web PER-JAWABAN (logika murni, UI hanya membaca hasil):
+//   'off'            → siswa mematikan pencarian web → UI diam (tanpa klaim)
+//   'unsupported'    → pencarian ON, tapi layanan ini tak bisa memanggil alat
+//   'model-only'     → pencarian ON & didukung, model menjawab tanpa mencari
+//   'searched-empty' → alat benar-benar jalan, tapi tidak ada hasil
+//   'ok'             → alat jalan & ada sumber
+// `search` = metadata dari providers.js: { supported, ran, count, error }.
+// Sesi lama (tanpa `search`) tetap terbaca: ada sumber → ok, selain itu
+// model-only/unsupported sesuai dukungan provider.
+export function classifyWebSearch({ webSearch, supportsGrounding, sources, search } = {}) {
+  if (!webSearch) return 'off';
+  const supported = search && typeof search.supported === 'boolean'
+    ? search.supported
+    : Boolean(supportsGrounding);
+  if (!supported) return 'unsupported';
+  const hasSources = Array.isArray(sources) && sources.length > 0;
+  if (hasSources) return 'ok';
+  if (search && search.ran) return 'searched-empty';
+  return 'model-only';
 }
 
 // Shape native Gemini: isi kutipan ada di groundingSupports (segment.text),

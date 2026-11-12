@@ -32,20 +32,21 @@ Bila belum punya endpoint, pilih salah satu provider bawaan di panel **Endpoint 
 
 ## Men-deploy
 
-Aplikasi ini sepenuhnya statis, dengan satu Pages Function (`functions/api/proxy.js`) untuk proksi endpoint provider. Deploy lewat **Cloudflare Pages**:
+Aplikasi ini sepenuhnya statis, dengan tiga Pages Function di `functions/api/`: `proxy.js` (proksi endpoint provider), `search.js` (pencarian web Tavily), dan `fetch.js` (membaca halaman untuk materi). Deploy lewat **Cloudflare Pages**:
 
 1. Hubungkan repository ini di dashboard Cloudflare Pages.
 2. Build command: `npm run build` (opsional — bundle sudah di-commit). Output directory: `/` (root repo).
 3. `functions/` dideteksi otomatis sebagai Pages Functions; `_headers` dan `_redirects` di root dipakai sebagai konfigurasi cache/keamanan dan SPA fallback.
+4. Di **Settings → Environment variables**, tambahkan secret `TAVILY_API_KEY` (dari [tavily.com](https://tavily.com)). Tanpa kunci ini aplikasi tetap jalan, tetapi toggle pencarian web dimatikan dan tutor menjawab dari materi/pengetahuan model.
 
-Pastikan path relatif tetap utuh (struktur folder `css/`, `js/`, `assets/` tidak boleh diubah). Untuk uji lokal dengan Pages Function: `npx wrangler pages dev .`.
+Pastikan path relatif tetap utuh (struktur folder `css/`, `js/`, `assets/` tidak boleh diubah). Untuk uji lokal dengan Pages Function: `TAVILY_API_KEY=... npx wrangler pages dev .`.
 
 ## Daftar fitur
 
 - **BYOK** — masukkan kunci API *provider* (opsional; endpoint lokal tak butuh) dengan toggle lihat/sembunyikan, tersimpan otomatis di `localStorage`, indikator privasi, dan tombol hapus semua data.
-- **Materi (RAG)** — **lampirkan file** `.txt`/`.md`/`.pdf`/`.docx` (drag & drop atau klik; teks PDF diekstrak via pdf.js, .docx via mammoth — semua di browser). File tampil sebagai **chip** (nama + jumlah karakter + tombol lepas) — teks hasil ekstraksi **tidak ditampilkan** di panel, tapi tetap ikut dikirim ke model. File **spesifik per sesi chat** (tiap chat punya lampirannya sendiri). Penghitung karakter real-time, tersimpan antar sesi.
+- **Materi (RAG)** — **lampirkan file** `.txt`/`.md`/`.pdf`/`.docx` (drag & drop atau klik; teks PDF diekstrak via pdf.js, .docx via mammoth — semua di browser) **atau tempel alamat website** yang isinya dibaca server lalu disimpan sebagai teks materi. File tampil sebagai **chip** (nama + jumlah karakter + tombol lepas) — teks hasil ekstraksi **tidak ditampilkan** di panel, tapi tetap ikut dikirim ke model. File **spesifik per sesi chat** (tiap chat punya lampirannya sendiri). Penghitung karakter real-time, tersimpan antar sesi.
 - **Pengaturan belajar** — 4 mode (Paham Konsep, **Penjelasan** — penjelasan tuntas tanpa interogasi, Latihan Soal, Persiapan Ujian), slider kedalaman bimbingan 1–5 (mengubah aturan prompt; parameter temperature tidak dipakai lagi karena sudah deprecated di banyak model, diganti `thinkingLevel` per mode), **gaya bahasa** Santai ↔ Formal (menyesuaikan derajat keakraban bahasa tanpa mengubah metode Socratic), dan pilihan model — daftarnya **disegarkan otomatis dari endpoint terpilih**, jadi model yang sudah dinonaktifkan provider tidak lagi ditawarkan (bebas error 404). Provider dipilih dari dropdown; tiga bawaan langsung tersedia (**OpenRouter**, **Gemini AI Studio**, **OpenAI**), atau hubungkan endpoint [OI]-compatible sendiri.
-- **Cari web (grounding)** — toggle "Cari web untuk pelengkap" memakai Google Search grounding bila endpoint mendukungnya (mis. Gemini AI Studio; tanpa API key kedua). Tautan sumber tampil sebagai blok "Sumber" di bawah balasan + tombol **＋ Simpan ke materi** yang menambahkannya ke materi sesi (tampil sebagai chip `web-rujukan.md`, bisa dilepas). Bila endpoint tak mendukung grounding, tetap muncul petunjuk pencarian biasa.
+- **Cari web** — toggle "Cari web untuk pelengkap" memakai alat `web_search` sungguhan di balik `/api/search` (Tavily, 5 hasil, satu putaran). Kunci Tavily hanya ada di server. Toggle otomatis mati bila server belum dikonfigurasi atau layanan tidak bisa memanggil alat, dan tutor dilarang mengaku mencari. Sumber tampil **bernomor** (cocok dengan penanda `[1]` di jawaban) beserta **tanggal akses**, plus tombol **＋ Simpan ke materi**. Bila model memilih tidak mencari, jawaban diberi label jujur "Dari pengetahuan model".
 - **Riwayat sesi** — sidebar kiri menampilkan semua sesi (judul otomatis dari pertanyaanmu + tanggal relatif, maks. 50); klik untuk membuka kembali, hapus per sesi, auto-save tiap giliran, migrasi otomatis dari format versi lama.
 - **Percakapan** — multi-turn, render markdown + sanitasi, **rumus LaTeX tampil sebagai rumus visual via KaTeX** (dimuat on-demand; offline tetap terbaca sebagai teks mentah), kutipan materi `[[...]]` disorot sebagai chip (yang tidak ditemukan di materi diberi tanda *belum terverifikasi*), efek mengetik progresif dengan tombol Lewati, sapaan pembuka otomatis.
 - **Data & statistik** — timer waktu aktif (berhenti saat idle/tab tersembunyi), penghitung petunjuk, penghitung giliran dialog, ekspor percakapan ke file `.md` (bagian dari eksperimen STEM), **dan ekspor kartu studi ke gambar `.png`** (shareable untuk WA/IG) lewat menu titik-tiga di tiap sesi.
@@ -99,7 +100,7 @@ bimbingkamu/
 Unit test memakai test runner bawaan Node (tanpa dependensi):
 
 ```bash
-node --test tests/*.mjs
+node --test tests/*.test.js
 ```
 
 Mencakup `mapApiError`, `extractSources`, bentuk permintaan chat [OI]-compatible (`providers.js`: kunci di header, tanpa `temperature`, tool `google_search`), dynamic pricing, logika sesi, `extractMath`, `itemsToText`, `formatDuration`, dan prompt. Uji antarmuka (DOM) tetap manual — lihat [`REVIEW.md`](./REVIEW.md).

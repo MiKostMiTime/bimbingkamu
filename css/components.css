@@ -1826,27 +1826,46 @@
   color: var(--color-text-secondary);
 }
 
-.msg__sources ul {
+.msg__sources ol {
   margin: 0 0 var(--space-2);
-  padding: 0;
-  list-style: none;
+  padding-left: 1.4em;
   display: grid;
-  gap: 4px;
+  gap: 6px;
+  font-size: var(--text-caption);
+}
+
+.msg__sources li {
+  color: var(--color-text-secondary);
 }
 
 .msg__sources a {
   font-size: var(--text-caption);
   color: var(--color-accent);
   text-decoration: none;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   display: block;
   max-width: 100%;
 }
 
 .msg__sources a:hover {
   text-decoration: underline;
+}
+
+.msg__sources-snippet {
+  margin: 2px 0 0;
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.msg__sources-meta {
+  margin: 2px 0 0;
+  font-size: var(--text-caption);
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+  opacity: 0.85;
 }
 
 .msg__sources .btn {
@@ -1885,6 +1904,67 @@
   font-size: var(--text-body);
   color: var(--color-text);
   font-weight: 500;
+}
+
+.toggle.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.toggle.is-disabled .toggle__input {
+  cursor: not-allowed;
+}
+
+/* ===== MATERI DARI URL ===== */
+.url-materi {
+  margin-top: var(--space-3);
+}
+
+.url-materi__label {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.url-materi__row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: stretch;
+}
+
+.url-materi__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: max(16px, var(--text-body));
+}
+
+.url-materi__input:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.url-materi__row .btn {
+  flex: none;
+  min-height: 44px;
+  padding-inline: var(--space-4);
+}
+
+@media (max-width: 640px) {
+  .url-materi__row {
+    flex-direction: column;
+  }
+  .url-materi__row .btn {
+    width: 100%;
+  }
 }
 
 

@@ -321,6 +321,24 @@
               <span>Tarik file ke sini, atau klik (.txt / .md / .pdf / .docx, maks. 5 MB), tersimpan per sesi</span>
               <input id="materiFile" type="file" accept=".txt,.md,.pdf,.docx" hidden />
             </div>
+            <div class="url-materi">
+              <label class="url-materi__label" for="materiUrl">Atau ambil dari alamat website</label>
+              <div class="url-materi__row">
+                <input
+                  id="materiUrl"
+                  class="url-materi__input"
+                  type="url"
+                  inputmode="url"
+                  autocomplete="off"
+                  placeholder="https://contoh.com/artikel"
+                />
+                <button id="materiUrlBtn" class="btn btn--secondary" type="button">Ambil</button>
+              </div>
+              <p class="field__hint">
+                Isi halaman dibaca jadi teks materi sesi. Halaman yang butuh
+                login atau dimuat dengan JavaScript mungkin tidak terbaca.
+              </p>
+            </div>
           </div>
         </div>
       </section>
@@ -370,10 +388,9 @@
             />
             <span class="toggle__text">Cari web untuk pelengkap</span>
           </label>
-          <p class="field__hint">
-            Model menelusuri Web Search untuk definisi, fakta, dan contoh
-            di luar materimu. Tautan sumber tampil di bawah balasan dan bisa
-            disimpan ke materi sesi.
+          <p class="field__hint" id="webSearchHint">
+            Tutor boleh mencari web bila materi kurang. Sumber dan tanggal
+            akses ditampilkan di bawah jawaban.
           </p>
         </div>
         <div class="slider">

@@ -6,7 +6,7 @@
 
 import { extractMath, loadKatex } from './math.js';
 import { formatCost } from './pricing.js';
-import { isValidHttpUrl, truncateSnippet } from './api.js';
+import { isValidHttpUrl, truncateSnippet, classifyWebSearch } from './api.js';
 
 // ===== UTIL TEKS =====
 function escapeHtml(str) {
@@ -470,13 +470,25 @@ export function sourceAnchor(source) {
   };
 }
 
-export function renderSources(msg, sources, { onSave } = {}) {
+// Tanggal akses sumber, format Indonesia singkat: "12 Nov 2026".
+// Murni agar bisa diuji; masukan tak valid → string kosong (tak menampilkan
+// tanggal palsu).
+const MONTHS_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+export function formatAccessDate(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getDate()} ${MONTHS_ID[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+export function renderSources(msg, sources, { onSave, accessedAt } = {}) {
   if (!msg || !sources || !sources.length) return null;
   const col = msg.querySelector('.msg__col');
   if (!col) return null;
 
   // Pakai container yang sama dengan status websearch (jaga transisi rapi).
   const box = getSourcesBox(col);
+  box.hidden = false;
   box.innerHTML = '';
 
   const head = document.createElement('p');
@@ -484,7 +496,10 @@ export function renderSources(msg, sources, { onSave } = {}) {
   head.textContent = `Sumber (${sources.length})`;
   box.appendChild(head);
 
-  const list = document.createElement('ul');
+  // Daftar BERnomor (<ol>): nomor di daftar ini sama dengan penanda [1], [2]
+  // yang ditulis model di badan jawaban, jadi siswa bisa melacak klaim.
+  const list = document.createElement('ol');
+  const accessed = formatAccessDate(accessedAt);
   for (const s of sources) {
     const li = document.createElement('li');
     const anchor = sourceAnchor(s);
@@ -503,6 +518,12 @@ export function renderSources(msg, sources, { onSave } = {}) {
       p.className = 'msg__sources-snippet';
       p.textContent = anchor.snippet; // textContent → aman
       li.appendChild(p);
+    }
+    if (accessed) {
+      const meta = document.createElement('p');
+      meta.className = 'msg__sources-meta';
+      meta.textContent = `Diakses ${accessed}`;
+      li.appendChild(meta);
     }
     list.appendChild(li);
   }
@@ -525,12 +546,19 @@ export function renderSources(msg, sources, { onSave } = {}) {
 }
 
 // Tampilkan status websearch per-jawaban di bubble model: loading (menjawab),
-// not-found (ada grounding, tak ada sumber), atau unsupported (grounding tak
-// didukung endpoint). Container .msg__sources dipakai bersama renderSources agar
-// transisi loading → sumber tetap satu blok.
+// model-only (menjawab dari pengetahuan model), searched-empty (dicari tapi
+// kosong), unsupported (layanan tak bisa mencari). State 'off' menyembunyikan
+// blok sepenuhnya — kalau pencarian dimatikan, UI tidak boleh mengklaim apa pun.
 export function showWebSearchStatus(col, status) {
   if (!col) return null;
   const box = getSourcesBox(col);
+
+  if (status === 'off') {
+    box.innerHTML = '';
+    box.hidden = true;
+    return null;
+  }
+  box.hidden = false;
   box.innerHTML = '';
 
   if (status === 'loading') {
@@ -553,33 +581,35 @@ export function showWebSearchStatus(col, status) {
 
   const p = document.createElement('p');
   p.className = 'msg__sources-title';
-  p.textContent = status === 'unsupported'
-    ? 'Pencarian web tidak didukung layanan ini.'
-    : 'Tidak ada sumber web.';
+  p.textContent = webSearchStatusText(status);
   box.appendChild(p);
   return box;
 }
 
 // Label status websearch per-state (logika murni, untuk diuji).
+// 'off' dan 'ok' sengaja tanpa label — keduanya bukan keadaan "kurang sumber".
 export function webSearchStatusText(state) {
   return {
     loading: 'Mencari sumber web…',
-    'not-found': 'Tidak ada sumber web.',
-    unsupported: 'Pencarian web tidak didukung layanan ini.',
-  }[state];
+    'model-only': 'Dari pengetahuan model, tanpa pencarian web.',
+    'searched-empty': 'Pencarian web tidak menemukan sumber.',
+    unsupported: 'Layanan ini tidak bisa mencari di web.',
+  }[state] || '';
 }
 
 // Terapkan status websearch FINAL ke bubble model (setelah jawaban / saat render
-// ulang sesi, sunting, regenerasi). Sumber → renderSources (pakai container
-// loading bila ada); tak ada → not-found/unsupported. onSave opsional agar tombol
-// "＋ Simpan ke materi" tetap muncul lewat jalur ini.
-export function applyWebSearchState(col, { sources = [], supportsGrounding, onSave } = {}) {
+// ulang sesi, sunting, regenerasi). Sumber → renderSources; selain itu label
+// state yang jujur. onSave opsional agar tombol "＋ Simpan ke materi" tetap ada.
+export function applyWebSearchState(col, {
+  sources = [], supportsGrounding, webSearch = true, search = null, accessedAt, onSave,
+} = {}) {
   if (!col) return;
-  if (sources && sources.length) {
+  const state = classifyWebSearch({ webSearch, supportsGrounding, sources, search });
+  if (state === 'ok') {
     // renderSources mengambil col via querySelector('.msg__col'); col diketahui.
-    renderSources({ querySelector: () => col }, sources, { onSave });
+    renderSources({ querySelector: () => col }, sources, { onSave, accessedAt });
   } else {
-    showWebSearchStatus(col, supportsGrounding ? 'not-found' : 'unsupported');
+    showWebSearchStatus(col, state);
   }
 }
 

@@ -14,6 +14,8 @@ import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
 import { extractPdfText } from './pdf.js';
 import { extractDocxText } from './docx.js';
 import { buildSystemPrompt, buildMaterialMessage, buildOpeningPrompt } from './prompt.js';
+import { checkSearchBackend, isSearchBackendReady } from './search.js';
+import { fetchUrlMaterial } from './url-material.js';
 import {
   createSession,
   syncSession,
@@ -90,6 +92,8 @@ const dom = {
   newSessionBtn: $('newSessionBtn'),
   materiDrop: $('materiDrop'),
   materiFile: $('materiFile'),
+  materiUrl: $('materiUrl'),
+  materiUrlBtn: $('materiUrlBtn'),
   materiCount: $('materiCount'),
   materiClear: $('materiClear'),
   materiFileList: $('materiFileList'),
@@ -221,21 +225,65 @@ function logApiError(err) {
 // Registry provider = endpoint terdaftar user (tanpa bawaan).
 function currentProviders() { return resolveProviders(state.settings.providers || []); }
 
-// Kapabilities grounding endpoint aktif ( untuk indikator websearch per-jawaban).
-function supportsGroundingFor() {
-  return Boolean(currentProviders()[state.settings.provider]?.supportsGrounding);
+// Dukungan pencarian web ditentukan dari JENIS transport (kind), bukan field
+// lama yang tersimpan di localStorage: 'oi' dan 'anthropic' sama-sama bisa
+// memanggil alat web_search.
+function providerSupportsWebSearch(providerId = state.settings.provider) {
+  // getAdapter() jatuh ke 'oi' bila kind tidak dikenal/kosong, jadi samakan.
+  const kind = currentProviders()[providerId]?.kind || 'oi';
+  return kind === 'oi' || kind === 'anthropic';
 }
 
-// Tampilkan status websearch FINAL ke bubble model: sumber / 'tidak ada' /
-// 'not didukung'. Hanya saat websearch aktif. Dipakai di semua jalur yang
-// membangun bubble dari metadata tersimpan (restore, sunting, regenerasi).
-// Loading ("Mencari sumber web…") hanya ditunjukkan saat menjawab di
-// sendUserMessage, bukan di sini.
+// Alias lama (dipakai metadata bubble): dukungan pencarian = dukungan alat.
+function supportsGroundingFor() {
+  return providerSupportsWebSearch();
+}
+
+// Pencarian yang BENAR-BENAR dipakai: siswa menyalakannya + layanan bisa
+// memanggil alat + server punya kunci pencarian. Semua syarat harus terpenuhi;
+// kalau tidak, tutor tidak boleh mengaku mencari.
+function effectiveWebSearch() {
+  return Boolean(state.settings.webSearch) && providerSupportsWebSearch() && isSearchBackendReady();
+}
+
+// Segarkan toggle + keterangan agar jujur soal kemampuan sebenarnya.
+// Mengembalikan true bila pencarian benar-benar bisa dipakai.
+async function refreshWebSearchUI() {
+  const supported = providerSupportsWebSearch();
+  const backendReady = supported ? await checkSearchBackend() : false;
+  const usable = supported && backendReady;
+  const toggle = dom.webSearchToggle;
+  if (toggle) {
+    toggle.disabled = !usable;
+    toggle.checked = usable && state.settings.webSearch !== false;
+    const label = toggle.closest('.toggle');
+    if (label) label.classList.toggle('is-disabled', !usable);
+  }
+  const hint = $('webSearchHint');
+  if (hint) {
+    const text = !supported
+      ? 'Layanan AI ini belum bisa mencari di web. Jawaban memakai materi dan pengetahuan model.'
+      : !backendReady
+        ? 'Pencarian web belum aktif di server ini. Jawaban memakai materi dan pengetahuan model.'
+        : 'Tutor boleh mencari web bila materi kurang. Sumber dan tanggal akses ditampilkan di bawah jawaban.';
+    hint.textContent = text;
+    hint.hidden = !text;
+  }
+  return usable;
+}
+
+// Tampilkan status websearch FINAL ke bubble model: sumber / label jujur /
+// tidak menampilkan apa pun bila pencarian dimatikan. Dipakai di semua jalur
+// yang membangun bubble dari metadata tersimpan (restore, sunting, regenerasi).
+// Loading ("Mencari sumber web…") hanya ditunjukkan saat menjawab.
 function renderModelWebSearch(built, m) {
-  if (!built || !m || !m.webSearch) return;
+  if (!built || !m) return;
   applyWebSearchState(built.col, {
     sources: m.sources || [],
-    supportsGrounding: m.supportsGrounding,
+    supportsGrounding: m.supportsGrounding ?? supportsGroundingFor(),
+    webSearch: m.webSearch !== false,
+    search: m.search || null,
+    accessedAt: m.webAccessedAt,
     onSave: () => saveWebMateri(m.sources || []),
   });
 }
@@ -425,7 +473,9 @@ async function connectEndpoint({ baseUrl, name, key, providerId }) {
     key: key || '',
     kind,                          // AREA 2: keluarga transport persist → adapter benar
     contextStrategy,               // AREA 2: strategi konteks persist (mis. 'none')
-    supportsGrounding: Boolean(existing && existing.supportsGrounding),
+    // Dukungan pencarian diturunkan dari kind (bukan disimpan manual):
+    // 'oi' & 'anthropic' bisa memanggil alat web_search.
+    supportsGrounding: kind === 'oi' || kind === 'anthropic',
     supportsThinking: Boolean(existing && existing.supportsThinking),
     custom: true,
   };
@@ -441,6 +491,7 @@ async function connectEndpoint({ baseUrl, name, key, providerId }) {
   renderProviderOptions();
   await refreshProviderModelList();
   renderEndpoints();
+  refreshWebSearchUI();
   showToast(`Layanan "${provider.name}" ${providerId ? 'disunting.' : 'terhubung.'}`, 'success');
   const ids = await listModels(activeApiKey(), provider);
   // Label kaya (Gratis/konteks/harga) juga dikirim ke onboarding supaya siswa
@@ -462,6 +513,7 @@ async function deleteProvider(id) {
   renderProviderOptions();
   renderEndpoints();
   await refreshProviderModelList();
+  refreshWebSearchUI();
 }
 
 // ===== DAFTAR ENDPOINT DI DRAWER PENGATURAN =====
@@ -1251,14 +1303,15 @@ async function sendUserMessage(rawText, opts = {}) {
     // Tandai "sedang menulis" di dalam bubble (bukan bubble terpisah) agar
     // progress tetap terlihat saat model sedang berpikir, sebelum token pertama.
     typing = insertBubbleTyping(built.content);
-    // Saat websearch aktif, tampilkan "Mencari sumber web…" di bawah bubble selama
-    // menjawab (loading). Setelah selesai → applyWebSearchState (sumber / tidak ada).
-    if (state.settings.webSearch) showWebSearchStatus(built.col, 'loading');
+    // Saat websearch benar-benar aktif, tampilkan "Mencari sumber web…" di bawah
+    // bubble selama menjawab (loading). Setelah selesai → applyWebSearchState.
+    const webNow = effectiveWebSearch();
+    if (webNow) showWebSearchStatus(built.col, 'loading');
     userStopped = false;
     abortCtl = new AbortController();
     let streamed = false;
     let lastRenderAt = 0, renderedWords = 0; // throttle paint streaming (token-by-token)
-    const { text: reply, tokens, sources } = await providerChat(state.settings.provider, {
+    const { text: reply, tokens, sources, search } = await providerChat(state.settings.provider, {
       apiKey: activeApiKey(),
       model: state.settings.model,
       systemPrompt: buildSystemPrompt({
@@ -1267,12 +1320,12 @@ async function sendUserMessage(rawText, opts = {}) {
         mode: state.settings.mode,
         level: state.settings.level,
         tone: state.settings.tone,
-        webSearch: state.settings.webSearch,
+        webSearch: webNow,
       }),
       contents,
       thinkingLevel: thinkingLevelFor(),
-      grounding: state.settings.webSearch,
-      contextMessages: materialContext(buildMateriFor(text), state.settings.webSearch),
+      grounding: webNow,
+      contextMessages: materialContext(buildMateriFor(text), webNow),
       customProviders: state.settings.providers || [],
       signal: abortCtl.signal,
       onDelta: (acc) => {
@@ -1295,7 +1348,16 @@ async function sendUserMessage(rawText, opts = {}) {
         }
       },
     });
-    const modelMsg = { role: 'model', text: reply, sources, tokens, webSearch: state.settings.webSearch, supportsGrounding: supportsGroundingFor() };
+    const modelMsg = {
+      role: 'model',
+      text: reply,
+      sources,
+      tokens,
+      webSearch: webNow,
+      search: search || null,
+      webAccessedAt: Date.now(),
+      supportsGrounding: supportsGroundingFor(),
+    };
     state.messages.push(modelMsg);
     answered = true;
     if (streamed) {
@@ -1308,8 +1370,15 @@ async function sendUserMessage(rawText, opts = {}) {
       streamReply(built.content, reply, built.msg); // fallback: endpoint tanpa SSE
     }
     // Sumber web per-jawaban: loading sudah ditampilkan; kini tampilkan keadaan akhir.
-    if (state.settings.webSearch) {
-      applyWebSearchState(built.col, { sources, supportsGrounding: supportsGroundingFor(), onSave: () => saveWebMateri(sources) });
+    if (webNow) {
+      applyWebSearchState(built.col, {
+        sources,
+        supportsGrounding: supportsGroundingFor(),
+        webSearch: webNow,
+        search: search || null,
+        accessedAt: modelMsg.webAccessedAt,
+        onSave: () => saveWebMateri(sources),
+      });
     }
     stampModelBubble(built.msg);
     buildModelActions(built.col, built.msg);
@@ -1401,7 +1470,8 @@ async function regenerateLast() {
   scrollToEnd(dom.chatScroll, true);
 
   try {
-    const { text: reply, tokens, sources } = await providerChat(state.settings.provider, {
+    const webNow = effectiveWebSearch();
+    const { text: reply, tokens, sources, search } = await providerChat(state.settings.provider, {
       apiKey: activeApiKey(),
       model: state.settings.model,
       systemPrompt: buildSystemPrompt({
@@ -1410,18 +1480,27 @@ async function regenerateLast() {
         mode: state.settings.mode,
         level: state.settings.level,
         tone: state.settings.tone,
-        webSearch: state.settings.webSearch,
+        webSearch: webNow,
       }),
       contents: plan.contents,
       thinkingLevel: thinkingLevelFor(),
-      grounding: state.settings.webSearch,
-      contextMessages: materialContext(buildMateri(), state.settings.webSearch),
+      grounding: webNow,
+      contextMessages: materialContext(buildMateri(), webNow),
       customProviders: state.settings.providers || [],
     });
     removeTyping(typing);
     const prev = state.messages[plan.modelIndex];
     // tangkap tokens → simpan ke metadata (footer + updateStats ikut).
-    state.messages[plan.modelIndex] = { ...prev, text: reply, sources, tokens };
+    state.messages[plan.modelIndex] = {
+      ...prev,
+      text: reply,
+      sources,
+      tokens,
+      webSearch: webNow,
+      search: search || null,
+      webAccessedAt: Date.now(),
+      supportsGrounding: supportsGroundingFor(),
+    };
     rerenderModelMessage(plan.modelIndex);
     state.busy = false; // <-- PENTING: reset di jalur sukses agar tidak mengunci composer
   } catch (err) {
@@ -1473,21 +1552,31 @@ async function regenerateFrom(editIdx) {
   const systemPrompt = () => buildSystemPrompt({
     includeMaterial: false,
     materi: buildMateri(), mode: state.settings.mode,
-    level: state.settings.level, webSearch: state.settings.webSearch, tone: state.settings.tone,
+    level: state.settings.level, webSearch: effectiveWebSearch(), tone: state.settings.tone,
   });
 
   try {
     for (const reg of regs) {
-      // providerChat → { text, tokens, sources } (path OpenAI-generic). Tangkap token tiap iterasi edit-regen.
-      const { text: reply, tokens, sources } = await providerChat(state.settings.provider, {
+      // providerChat → { text, tokens, sources, search } (path OpenAI-generic).
+      const webNow = effectiveWebSearch();
+      const { text: reply, tokens, sources, search } = await providerChat(state.settings.provider, {
         apiKey: activeApiKey(), model: state.settings.model, systemPrompt: systemPrompt(),
         contents: reg.contents, thinkingLevel: thinkingLevelFor(),
-        grounding: state.settings.webSearch, customProviders: state.settings.providers || [],
-        contextMessages: materialContext(buildMateri(), state.settings.webSearch),
+        grounding: webNow, customProviders: state.settings.providers || [],
+        contextMessages: materialContext(buildMateri(), webNow),
       });
       const prev = state.messages[reg.modelIndex];
       // tangkap tokens → simpan ke metadata (footer + updateStats ikut).
-      state.messages[reg.modelIndex] = { ...prev, text: reply, sources, tokens };
+      state.messages[reg.modelIndex] = {
+        ...prev,
+        text: reply,
+        sources,
+        tokens,
+        webSearch: webNow,
+        search: search || null,
+        webAccessedAt: Date.now(),
+        supportsGrounding: supportsGroundingFor(),
+      };
     }
     rerenderModelMessagesFrom(editIdx);
     state.busy = false;   // <-- reset di jalur sukses (poin penting)
@@ -1568,6 +1657,8 @@ function hydrateSettings() {
     (o) => o.value === state.settings.model
   );
   if (hasSavedModel) dom.model.value = state.settings.model;
+  // Toggle pencarian web hanya aktif bila server & layanan mendukung.
+  refreshWebSearchUI();
 }
 
 function updateMateriCount() {
@@ -1896,6 +1987,60 @@ async function ingestMateriFile(file) {
   }
 }
 
+// ===== MATERI DARI URL (halaman website) =====
+// Ambil halaman lewat /api/fetch, jadikan teks materi sesi (bentuk sama dengan
+// hasil .pdf/.docx). Tanpa fungsi ini, lampiran hanya bisa berupa file.
+async function ingestMateriUrl() {
+  const input = dom.materiUrl;
+  const btn = dom.materiUrlBtn;
+  const url = (input && input.value ? input.value : '').trim();
+  if (!url) {
+    showToast('Tempel alamat halaman dulu, ya (contoh: https://...).', 'info');
+    if (input) input.focus();
+    return;
+  }
+  const prevLabel = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Mengambil…';
+  }
+  try {
+    const page = await fetchUrlMaterial(url);
+    if (!state.activeId) state.activeId = createSession().id;
+    const name = `${page.title || page.url} (halaman web)`;
+    if (state.materiFiles.some((f) => f.name === name)) {
+      showToast('Halaman itu sudah dilampirkan di sesi ini.', 'info');
+      return;
+    }
+    state.materiFiles.push({ name, chars: page.text.length, text: page.text });
+    saveActiveSession();
+    renderMateriFiles();
+    updateMateriCount();
+    if (input) input.value = '';
+    showToast(
+      page.truncated
+        ? `"${name}" diambil, tapi teksnya dipotong agar muat.`
+        : `"${name}" berhasil dilampirkan.`,
+      'success',
+    );
+    const totalChars = state.materiFiles.reduce((n, f) => n + f.chars, 0);
+    if (totalChars > WARN_TOTAL_CHARS) {
+      showToast(`Materi sangat panjang (±${Math.ceil(totalChars / 4).toLocaleString('id-ID')} token). Balasan bisa lebih lambat dan penyimpanan browser cepat penuh.`, 'info');
+    }
+  } catch (err) {
+    console.error('[BimbingKamu] ambil materi URL gagal:', err);
+    const msg = err && err.type
+      ? err.message
+      : 'Halaman tidak bisa dibaca. Periksa alamatnya lalu coba lagi.';
+    showToast(msg, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = prevLabel || 'Ambil';
+    }
+  }
+}
+
 // ===== SIDEBAR RIWAYAT: RATAKAN (layar lebar) =====
 // Di layar lebar tombol header meratakan sidebar (bukan drawer);
 // keadaannya tersimpan supaya konsisten antar kunjungan.
@@ -1997,6 +2142,7 @@ function bindEvents() {
     persistSettings();
     renderProviderOptions();
     refreshProviderModelList();
+    refreshWebSearchUI();
   });
   // Daftar endpoint: tombol "Tambah endpoint" membuka modal pop-up
   // (satu-satunya jalur tambah di Pengaturan; tidak ada form inline).
@@ -2073,6 +2219,15 @@ function bindEvents() {
     dom.materiFile.value = '';
     ingestMateriFile(file);
   });
+  if (dom.materiUrlBtn) dom.materiUrlBtn.addEventListener('click', ingestMateriUrl);
+  if (dom.materiUrl) {
+    dom.materiUrl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        ingestMateriUrl();
+      }
+    });
+  }
   dom.materiClear.addEventListener('click', () => {
     if (!state.materiFiles.length) return;
     showConfirm({
@@ -2108,6 +2263,14 @@ function bindEvents() {
     persistSettings();
   });
   dom.webSearchToggle.addEventListener('change', () => {
+    // Toggle hanya bermakna bila layanan & server benar-benar mendukung.
+    if (!providerSupportsWebSearch() || !isSearchBackendReady()) {
+      dom.webSearchToggle.checked = false;
+      state.settings.webSearch = false;
+      persistSettings();
+      showToast('Pencarian web belum aktif. Jawaban memakai materi dan pengetahuan model.', 'info');
+      return;
+    }
     state.settings.webSearch = dom.webSearchToggle.checked;
     persistSettings();
   });
@@ -2219,7 +2382,7 @@ function exportSession(session) {
       turns: isCurrent ? turnCount() : messages.length,
       hints: messages.filter((m) => m.kind === 'hint').length,
       model: state.settings.model,
-      webSearch: state.settings.webSearch,
+      webSearch: effectiveWebSearch(),
     },
     messages,
   });

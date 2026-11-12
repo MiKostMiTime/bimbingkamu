@@ -8,6 +8,7 @@
 // =========================================================
 import { mapApiError, extractSources } from './api.js';
 import { getAdapter, resolveAuthHeaders, PROVIDER_DEFS, buildProviderSeed, readSSEAnthropic, normalizeAnthropicText, readStreamChunk } from './adapters.js';
+import { searchWeb, buildSearchTool, buildAnthropicSearchTool } from './search.js';
 
 // ===== PROXY & providerFetch (PNA/CORS) =====
 // Masalah: aplikasi dijalankan sebagai halaman HTTPS (Cloudflare Pages). Bila endpoint
@@ -777,6 +778,198 @@ export function pickModelIdsForDropdown(result) {
   return ids.length ? ids : [];
 }
 
+// ===== PENCARIAN WEB: EKSEKUSI ALAT =====
+// Batas 5 hasil (sama dengan /api/search) agar konteks tetap ringkas.
+const MAX_SEARCH_RESULTS = 5;
+
+function searchTokenEstimate(items) {
+  try {
+    return Math.ceil(JSON.stringify(items).length / 4);
+  } catch {
+    return 0;
+  }
+}
+
+function dedupeSearchSources(list) {
+  const seen = new Set();
+  const out = [];
+  for (const r of list) {
+    if (!r || !r.url) continue;
+    const key = String(r.url).replace(/#.*$/, '').replace(/\/$/, '');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(r);
+    if (out.length >= MAX_SEARCH_RESULTS) break;
+  }
+  return out;
+}
+
+// Metadata pencarian yang dikirim balik ke UI. `requested` = siswa menyalakan
+// web search; `supported` = provider bisa memanggil alat; `ran` = model benar-
+// benar memanggil alat. UI memakai ketiganya untuk badge yang jujur.
+function searchMeta({ requested = false, supported = false, ran = false, count = 0, tokens = 0, cached = false, error = null } = {}) {
+  return { requested, supported, ran, count, tokens, cached, error };
+}
+
+// Jalankan semua tool_call 'web_search'. Mengembalikan item terstruktur (dipakai
+// untuk membangun pesan tool sesuai API) + sumber gabungan untuk UI.
+// AbortError diteruskan: tombol Berhenti harus menghentikan seluruh giliran.
+async function executeSearchCalls(calls) {
+  const items = [];
+  let cached = false;
+  let error = null;
+  for (const call of calls) {
+    const id = call.id || '';
+    const name = (call.function && call.function.name) || call.name || '';
+    if (name !== 'web_search') continue;
+
+    let args = call.input;
+    if (!args && call.function && typeof call.function.arguments === 'string') {
+      try {
+        args = JSON.parse(call.function.arguments);
+      } catch {
+        args = null;
+      }
+    }
+    const query = args && typeof args.query === 'string' ? args.query.trim() : '';
+    try {
+      if (!query) throw { message: 'kueri pencarian kosong' };
+      const found = await searchWeb(query, { limit: MAX_SEARCH_RESULTS });
+      cached = cached || found.cached;
+      items.push({ id, name, query, results: found.results, error: null });
+    } catch (err) {
+      if (err && err.name === 'AbortError') throw err;
+      if (!error) error = err;
+      items.push({ id, name, query, results: [], error: (err && err.message) || 'pencarian gagal' });
+    }
+  }
+  const flat = [];
+  for (const it of items) flat.push(...it.results);
+  return {
+    items,
+    results: dedupeSearchSources(flat),
+    cached,
+    error,
+    tokens: searchTokenEstimate(items),
+  };
+}
+
+function toolPayload(item) {
+  if (item.error) return { query: item.query, error: item.error };
+  return {
+    query: item.query,
+    results: item.results.map((r) => ({
+      title: r.title,
+      url: r.url,
+      snippet: r.snippet,
+      published: r.publishedDate || null,
+    })),
+  };
+}
+
+function addTokens(a, b) {
+  const pick = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
+  const sum = (x, y) => (pick(x) === null || pick(y) === null ? undefined : x + y);
+  return {
+    prompt: sum(a && a.prompt, b && b.prompt),
+    completion: sum(a && a.completion, b && b.completion),
+    total: sum(a && a.total, b && b.total),
+  };
+}
+
+// Lanjutan setelah model memanggil alat: kirim hasil pencarian sebagai pesan
+// `tool`, lalu minta jawaban final TANPA tools (batas 1 putaran). Bila pencarian
+// gagal, model tetap menjawab dan diberi tahu bahwa pencarian tidak berhasil.
+async function runSearchFollowUp({ provider, apiKey, body, calls, onDelta, signal, firstTokens }) {
+  const found = await executeSearchCalls(calls);
+  if (!found.items.length) {
+    return {
+      text: '',
+      tokens: firstTokens,
+      sources: [],
+      search: searchMeta({ requested: true, supported: true }),
+    };
+  }
+
+  const nextBody = {
+    ...body,
+    messages: [
+      ...body.messages,
+      { role: 'assistant', content: null, tool_calls: calls },
+      ...found.items.map((it) => ({
+        role: 'tool',
+        tool_call_id: it.id,
+        content: JSON.stringify(toolPayload(it)),
+      })),
+    ],
+  };
+  delete nextBody.tools;
+
+  const target = joinProviderPath(provider.baseUrl, provider.chatPath);
+  let res;
+  try {
+    res = await providerFetch(target, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(apiKey) },
+      body: JSON.stringify(nextBody),
+      signal,
+    });
+  } catch (err) {
+    if (!err || typeof err.type === 'undefined') {
+      const mapped = mapApiError(0);
+      throw { ...mapped, message: (err && err.message) ? err.message : mapped.message };
+    }
+    throw err;
+  }
+  if (!res.ok) {
+    let apiMessage = '';
+    try {
+      const j = JSON.parse(await res.text());
+      apiMessage = (j && j.error && j.error.message) || '';
+    } catch {}
+    throw { ...mapApiError(res.status, apiMessage) };
+  }
+
+  const search = searchMeta({
+    requested: true,
+    supported: true,
+    ran: true,
+    count: found.results.length,
+    tokens: found.tokens,
+    cached: found.cached,
+    error: found.error ? String(found.error.message || 'pencarian gagal') : null,
+  });
+
+  const wantStream = typeof onDelta === 'function';
+  if (wantStream && res.body && typeof res.body.getReader === 'function') {
+    onDelta(''); // buang teks pembuka sebelum alat dipanggil
+    const second = await readSSE(res, onDelta, signal);
+    return {
+      text: second.text.trim(),
+      tokens: addTokens(firstTokens, {
+        prompt: second.usage && second.usage.prompt_tokens,
+        completion: second.usage && second.usage.completion_tokens,
+        total: second.usage && second.usage.total_tokens,
+      }),
+      sources: found.results,
+      search,
+    };
+  }
+
+  const data = await res.json();
+  const choice = data.choices && data.choices[0];
+  return {
+    text: pickMessageText(choice && choice.message).trim(),
+    tokens: addTokens(firstTokens, {
+      prompt: data.usage && data.usage.prompt_tokens,
+      completion: data.usage && data.usage.completion_tokens,
+      total: data.usage && data.usage.total_tokens,
+    }),
+    sources: found.results,
+    search,
+  };
+}
+
 // ===== CHAT COMPLETION (PATH OPENAI) =====
 // POST ${baseUrl}${chatPath} body { model, messages, max_tokens, tools?, generationConfig? }.
 // Parameter: { provider, apiKey, model, systemPrompt, contents, maxTokens, thinkingLevel, grounding, onDelta, signal }
@@ -816,6 +1009,11 @@ export async function chatCompletion({
 
   const body = { model, messages, max_tokens: maxTokens };
   const wantStream = typeof onDelta === 'function';
+  // Pencarian hanya dideklarasikan bila diminta DAN provider bisa memanggil alat.
+  // Tanpa loop tool yang nyata, `tools` palsu membuat model mengaku mencari.
+  const searchRequested = Boolean(grounding);
+  const wantsSearch = Boolean(grounding && provider.supportsGrounding);
+  if (wantsSearch) body.tools = [buildSearchTool()];
   if (wantStream) {
     body.stream = true;
     body.stream_options = { include_usage: true }; // minta usage di chunk terakhir
@@ -832,7 +1030,7 @@ export async function chatCompletion({
   let streamStripped = false; // fallback 413: stream dilepas → respons jadi JSON
   let viaProxy = false;       // request pertama lewat proksi? (endpoint remote)
   try {
-    res = await buildChatRequest(provider, apiKey, body, grounding, signal, {
+    res = await buildChatRequest(provider, apiKey, body, signal, {
       onViaProxy: () => { viaProxy = true; },
     });
   } catch (err) {
@@ -918,27 +1116,44 @@ export async function chatCompletion({
   // (Lewati bila fallback melepas stream — respons kini JSON biasa.)
   if (wantStream && !streamStripped && res.body && typeof res.body.getReader === 'function') {
     const streamed = await readSSE(res, onDelta, signal);
+    const tokens = {
+      prompt: streamed.usage?.prompt_tokens ?? undefined,
+      completion: streamed.usage?.completion_tokens ?? undefined,
+      total: streamed.usage?.total_tokens ?? undefined,
+    };
+    // Model meminta pencarian → jalankan alat, lalu minta jawaban final
+    // (satu putaran saja). Tanpa langkah ini `tools` hanya janji kosong.
+    if (wantsSearch && streamed.toolCalls && streamed.toolCalls.length) {
+      return runSearchFollowUp({
+        provider, apiKey, body, calls: streamed.toolCalls, onDelta, signal, firstTokens: tokens,
+      });
+    }
     return {
       text: streamed.text.trim(),
-      tokens: {
-        prompt: streamed.usage?.prompt_tokens ?? undefined,
-        completion: streamed.usage?.completion_tokens ?? undefined,
-        total: streamed.usage?.total_tokens ?? undefined,
-      },
+      tokens,
       sources: streamed.sources || [], // ambil dari chunk, bukan hardcode []
+      search: searchMeta({ requested: searchRequested, supported: wantsSearch }),
     };
   }
 
   // Jalur non-stream (fallback: tanpa onDelta, atau res.body tak didukung).
   const data = await res.json();
   const choice = data.choices && data.choices[0];
-  const text = pickMessageText(choice && choice.message);
   const usage = data.usage || {};
   const tokens = {
     prompt: usage.prompt_tokens ?? undefined,
     completion: usage.completion_tokens ?? undefined,
     total: usage.total_tokens ?? undefined,
   };
+  // Model meminta pencarian → jalankan alat, minta jawaban final tanpa tools.
+  const toolCalls = (choice && choice.message && Array.isArray(choice.message.tool_calls))
+    ? choice.message.tool_calls
+    : [];
+  if (wantsSearch && toolCalls.length) {
+    return runSearchFollowUp({
+      provider, apiKey, body, calls: toolCalls, onDelta: undefined, signal, firstTokens: tokens,
+    });
+  }
   let sources = [];
   // Sumber grounding: Gemini native baca candidates[], endpoint OpenAI-compatible
   // kirim citations/tool_calls di top-level body (atau choices[0].message).
@@ -948,7 +1163,13 @@ export async function chatCompletion({
     sources = extractSources(data);
     if (!sources.length && choice?.message) sources = extractSources(choice.message);
   }
-  return { text: text.trim(), tokens, sources };
+  const text = pickMessageText(choice && choice.message);
+  return {
+    text: text.trim(),
+    tokens,
+    sources,
+    search: searchMeta({ requested: searchRequested, supported: wantsSearch }),
+  };
 }
 
 // ===== ANTHROPIC / CLAUDE NATIF =====
@@ -994,6 +1215,11 @@ export async function anthropicChat({
 
   const wantStream = typeof onDelta === 'function';
   if (wantStream) body.stream = true;
+  // Pencarian web lewat tool use native Claude: deklarasi alat hanya bila
+  // diminta & didukung. Tanpa hasil alat, model tak boleh mengaku mencari.
+  const searchRequested = Boolean(grounding);
+  const wantsSearch = Boolean(grounding && adapter.supportsGrounding);
+  if (wantsSearch) body.tools = [buildAnthropicSearchTool()];
 
   let res;
   try {
@@ -1014,8 +1240,9 @@ export async function anthropicChat({
 
   if (!res.ok) {
     let apiMessage = '';
+    let rawText = '';
     try {
-      const rawText = await res.text();
+      rawText = await res.text();
       try { const j = JSON.parse(rawText); apiMessage = j.error?.message || ''; } catch {}
     } catch {}
     throw { ...mapApiError(res.status, apiMessage, rawText) };
@@ -1024,29 +1251,152 @@ export async function anthropicChat({
   // Jalur SSE Claude: content_block_delta → delta.text; usage dari message_start/end.
   if (wantStream && res.body && typeof res.body.getReader === 'function') {
     const streamed = await readSSEAnthropic(res, onDelta, signal);
+    const tokens = {
+      prompt: streamed.usage?.input_tokens ?? undefined,
+      completion: streamed.usage?.output_tokens ?? undefined,
+      total: streamed.usage?.total_tokens ?? undefined,
+    };
+    if (wantsSearch && streamed.toolCalls && streamed.toolCalls.length) {
+      return anthropicSearchFollowUp({
+        adapter, provider, apiKey, body, calls: streamed.toolCalls, onDelta, signal, firstTokens: tokens,
+      });
+    }
     return {
       text: streamed.text.trim(),
-      tokens: {
-        prompt: streamed.usage?.input_tokens ?? undefined,
-        completion: streamed.usage?.output_tokens ?? undefined,
-        total: streamed.usage?.total_tokens ?? undefined,
-      },
+      tokens,
       sources: [],
+      search: searchMeta({ requested: searchRequested, supported: wantsSearch }),
     };
   }
 
   // Jalur non-stream: content = [{ type:'text', text }], usage = { input_tokens, ... }.
   const data = await res.json();
-  const text = normalizeAnthropicText(data.content);
   const usage = data.usage || {};
+  const tokens = {
+    prompt: usage.input_tokens ?? undefined,
+    completion: usage.output_tokens ?? undefined,
+    total: usage.total_tokens ?? undefined,
+  };
+  const toolCalls = (Array.isArray(data.content) ? data.content : [])
+    .filter((b) => b && b.type === 'tool_use' && b.name)
+    .map((b) => ({ id: b.id || '', name: b.name, input: b.input || {} }));
+  if (wantsSearch && toolCalls.length) {
+    return anthropicSearchFollowUp({
+      adapter, provider, apiKey, body, calls: toolCalls, onDelta: undefined, signal, firstTokens: tokens,
+    });
+  }
+  const text = normalizeAnthropicText(data.content);
   return {
     text: text.trim(),
-    tokens: {
-      prompt: usage.input_tokens ?? undefined,
-      completion: usage.output_tokens ?? undefined,
-      total: usage.total_tokens ?? undefined,
-    },
+    tokens,
     sources: [],
+    search: searchMeta({ requested: searchRequested, supported: wantsSearch }),
+  };
+}
+
+// Putaran kedua Claude: kirim hasil pencarian sebagai tool_result, minta
+// jawaban final TANPA tools (batas 1 putaran). `thinking` dilepas karena blok
+// thinking harus ikut dikirim ulang saat tool use — tanpa itu API menolak.
+async function anthropicSearchFollowUp({
+  adapter, provider, apiKey, body, calls, onDelta, signal, firstTokens,
+}) {
+  const found = await executeSearchCalls(calls);
+  if (!found.items.length) {
+    return {
+      text: '',
+      tokens: firstTokens,
+      sources: [],
+      search: searchMeta({ requested: true, supported: true }),
+    };
+  }
+
+  const nextBody = {
+    ...body,
+    messages: [
+      ...body.messages,
+      {
+        role: 'assistant',
+        content: calls.map((c) => ({
+          type: 'tool_use',
+          id: c.id,
+          name: c.name,
+          input: c.input || {},
+        })),
+      },
+      {
+        role: 'user',
+        content: found.items.map((it) => ({
+          type: 'tool_result',
+          tool_use_id: it.id,
+          content: JSON.stringify(toolPayload(it)),
+        })),
+      },
+    ],
+  };
+  delete nextBody.tools;
+  delete nextBody.thinking;
+
+  let res;
+  try {
+    res = await providerFetch(joinProviderPath(provider.baseUrl, provider.chatPath), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...adapter.authHeaders(apiKey) },
+      body: JSON.stringify(nextBody),
+      signal,
+    });
+  } catch (err) {
+    if (!err || typeof err.type === 'undefined') {
+      const mapped = mapApiError(0);
+      throw { ...mapped, message: (err && err.message) ? err.message : mapped.message };
+    }
+    throw err;
+  }
+  if (!res.ok) {
+    let apiMessage = '';
+    try {
+      const rawText = await res.text();
+      try { const j = JSON.parse(rawText); apiMessage = j.error?.message || ''; } catch {}
+    } catch {}
+    throw { ...mapApiError(res.status, apiMessage) };
+  }
+
+  const search = searchMeta({
+    requested: true,
+    supported: true,
+    ran: true,
+    count: found.results.length,
+    tokens: found.tokens,
+    cached: found.cached,
+    error: found.error ? String(found.error.message || 'pencarian gagal') : null,
+  });
+
+  const wantStream = typeof onDelta === 'function';
+  if (wantStream && res.body && typeof res.body.getReader === 'function') {
+    onDelta(''); // buang teks pembuka sebelum alat dipanggil
+    const second = await readSSEAnthropic(res, onDelta, signal);
+    return {
+      text: second.text.trim(),
+      tokens: addTokens(firstTokens, {
+        prompt: second.usage && second.usage.input_tokens,
+        completion: second.usage && second.usage.output_tokens,
+        total: second.usage && second.usage.total_tokens,
+      }),
+      sources: found.results,
+      search,
+    };
+  }
+
+  const data = await res.json();
+  const usage = data.usage || {};
+  return {
+    text: normalizeAnthropicText(data.content).trim(),
+    tokens: addTokens(firstTokens, {
+      prompt: usage.input_tokens,
+      completion: usage.output_tokens,
+      total: usage.total_tokens,
+    }),
+    sources: found.results,
+    search,
   };
 }
 
@@ -1068,6 +1418,7 @@ export async function readSSE(res, onDelta, signal) {
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = '', text = '', reasoning = '', usage = null, sources = [];
+  const toolCalls = [];
   const handle = (payload) => {
     if (payload === '[DONE]') return;
     let ev; try { ev = JSON.parse(payload); } catch { return; } // baris rusak → lewati
@@ -1078,6 +1429,19 @@ export async function readSSE(res, onDelta, signal) {
     else if (typeof rdelta === 'string' && rdelta) {
       reasoning += rdelta;
       if (!text) onDelta(reasoning); // hanya jika endpoint tak mengirim content
+    }
+    // Alat yang dipanggil model datang bertahap: index menentukan slot, nama dan
+    // argumen JSON diakumulasi per slot sampai selesai.
+    const tcs = choice && choice.delta && choice.delta.tool_calls;
+    if (Array.isArray(tcs)) {
+      for (const call of tcs) {
+        const i = Number.isInteger(call.index) ? call.index : toolCalls.length;
+        if (!toolCalls[i]) toolCalls[i] = { id: '', type: 'function', function: { name: '', arguments: '' } };
+        const slot = toolCalls[i];
+        if (call.id) slot.id = call.id;
+        if (call.function && call.function.name) slot.function.name += call.function.name;
+        if (call.function && call.function.arguments) slot.function.arguments += call.function.arguments;
+      }
     }
     if (ev.usage) usage = ev.usage;
     // Tangkap sumber grounding bila muncul di chunk (terakhir menang).
@@ -1103,17 +1467,20 @@ export async function readSSE(res, onDelta, signal) {
     const tail = buf.trim();
     if (tail.startsWith('data:')) handle(tail.slice(5).trim());
   } catch (err) {
-    if (text || reasoning) return { text: text || reasoning, usage, sources }; // stream putus → pakai yang sudah datang
+    if (text || reasoning) {
+      return { text: text || reasoning, usage, sources, toolCalls: toolCalls.filter(Boolean) };
+    }
     throw { ...mapApiError(0), message: (err && err.message) || 'Koneksi streaming terputus.' };
   }
-  return { text: text || reasoning, usage, sources };
+  return { text: text || reasoning, usage, sources, toolCalls: toolCalls.filter(Boolean) };
 }
 
-// Bangun & kirim POST chat; tambahkan tools grounding bila diminta + didukung.
+// Bangun & kirim POST chat. Deklarasi alat pencarian ditambahkan oleh
+// chatCompletion (bukan di sini) agar loop tool-call bisa mengontrol kapan
+// `tools` dikirim dan kapan dilepas.
 // `fetchOpts` diteruskan ke providerFetch (mis. { onViaProxy }) agar pemanggil
 // bisa mencatat jalur transport request pertama.
-async function buildChatRequest(provider, apiKey, body, grounding, signal, fetchOpts = {}) {
-  if (grounding && provider.supportsGrounding) body.tools = [{ type: 'function', function: { name: 'google_search', description: 'web grounding' } }];
+async function buildChatRequest(provider, apiKey, body, signal, fetchOpts = {}) {
   return providerFetch(joinProviderPath(provider.baseUrl, provider.chatPath), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeader(apiKey) },
