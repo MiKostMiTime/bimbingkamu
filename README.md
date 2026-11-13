@@ -86,7 +86,6 @@ bimbingkamu/
 ## Catatan teknis
 
 - Vanilla JavaScript ES Modules; tanpa framework, tanpa build tool.
-- CDN hanya 2 yang dimuat langsung (marked, DOMPurify); pdf.js dimuat on-demand hanya saat mengunggah `.pdf`, KaTeX dimuat on-demand hanya saat balasan berisi rumus, dan **html2canvas dimuat on-demand hanya saat ekspor kartu studi ke PNG**.
 - Layout: shell dikunci tinggi viewport (`overflow: hidden`) — yang bisa digulir hanya kotak chat. Sidebar riwayat 300px bisa diratakan di layar lebar; di layar ≤640px menjadi drawer. Panel setting berada di drawer kanan (fixed) yang sama di semua ukuran layar.
 - API: generik **[OI]-compatible** — tiap endpoint dihubunkan lewat path `/models` + `/chat/completions`; header auth & tools (grounding) disesuaikan per provider. Harga model **dinamis**: OpenRouter diambil live dari endpoint, LM Studio lokal = gratis, lainnya ditampilkan tanpa biaya.
 - Riwayat percakapan (user + model) dikirim penuh pada setiap giliran; system prompt berisi materi siswa (lengkap, tanpa pemotongan) + pola **jelaskan-dulu-baru-tanyakan** — Socratic dipakai untuk mengecek pemahaman, bukan pengganti penjelasan; mode & level mengatur intensitas bimbingan.
@@ -95,16 +94,3 @@ bimbingkamu/
 - Kutipan: system prompt mewajibkan AI membungkus frasa materi dengan `[[...]]`; frontend mengubahnya menjadi `<mark>` highlight + tooltip.
 - Seluruh data tersimpan di `localStorage` dengan prefiks `bimbingkamu.` — tombol **Hapus semua data** membersihkan hanya milik aplikasi ini.
 
-## Pengujian
-
-Unit test memakai test runner bawaan Node (tanpa dependensi):
-
-```bash
-node --test tests/*.test.js
-```
-
-Mencakup `mapApiError`, `extractSources`, bentuk permintaan chat [OI]-compatible (`providers.js`: kunci di header, tanpa `temperature`, tool `google_search`), dynamic pricing, logika sesi, `extractMath`, `itemsToText`, `formatDuration`, dan prompt. Uji antarmuka (DOM) tetap manual — lihat [`REVIEW.md`](./REVIEW.md).
-
-## Catatan perubahan
-
-Rincian perbaikan, hal yang belum dikerjakan, dan yang perlu diuji manual ada di [`REVIEW.md`](./REVIEW.md).
