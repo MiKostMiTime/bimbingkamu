@@ -567,7 +567,7 @@ function buildEndpointForm(p) {
 
   const f1 = mk('div', 'field');
   const l1 = mk('label', 'field__label'); l1.htmlFor = 'epEditUrl'; l1.textContent = 'Alamat API (URL)';
-  const i1 = mk('input', 'input'); i1.id = 'epEditUrl'; i1.type = 'text';
+  const i1 = mk('input', 'input'); i1.id = 'epEditUrl'; i1.type = 'text'; i1.placeholder = 'https://<host>/v1';
   i1.value = p ? p.baseUrl : ''; i1.autocomplete = 'off'; i1.spellcheck = false;
   const h1 = mk('p', 'field__hint');
   h1.textContent = 'Contoh: https://openrouter.ai/api/v1 untuk layanan cloud, atau http://localhost:1234 untuk LM Studio di komputer ini. Pakai alamat API-nya, bukan alamat halaman dashboard.';
@@ -575,14 +575,14 @@ function buildEndpointForm(p) {
 
   const f2 = mk('div', 'field');
   const l2 = mk('label', 'field__label'); l2.htmlFor = 'epEditName'; l2.textContent = 'Nama layanan';
-  const i2 = mk('input', 'input'); i2.id = 'epEditName'; i2.value = p ? p.name : '';
+  const i2 = mk('input', 'input'); i2.id = 'epEditName'; i2.value = p ? p.name : ''; i2.placeholder = 'Masukkan nama Layanan';
   i2.autocomplete = 'off'; i2.spellcheck = false; i2.required = true;
   f2.append(l2, i2);
 
   const f3 = mk('div', 'field');
   const l3 = mk('label', 'field__label'); l3.htmlFor = 'epEditKey'; l3.textContent = 'Kunci API';
   const keyrow = mk('div', 'endpoint-edit__keyrow');
-  const i3 = mk('input', 'input endpoint-edit__key'); i3.id = 'epEditKey'; i3.type = 'password';
+  const i3 = mk('input', 'input endpoint-edit__key'); i3.id = 'epEditKey'; i3.type = 'password'; i3.placeholder = 'Masukkan API key';
   i3.value = p ? (p.key || '') : ''; i3.autocomplete = 'off'; i3.spellcheck = false;
   const h3 = mk('p', 'field__hint');
   h3.textContent = 'Kunci API adalah kode rahasia dari website penyedia. Disimpan di browser ini saja dan hanya dipakai untuk layanan ini. LM Studio lokal biasanya tidak butuh kunci.';

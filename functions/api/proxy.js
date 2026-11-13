@@ -76,28 +76,19 @@ function headersToPairs(headers) {
 
 // Envelope JSON balasan non-stream. Method dipakai target, tapi status HTTP
 // yang dikirim ke klien selalu 200 agar body envelope terbaca lewat CORS biasa.
-// ===== ALLOWLIST HOST (audit H-1) =====
-// Proksi hanya melayani host provider AI/model yang dikenal. Host lain ditolak
-// agar endpoint tidak bisa dipakai pihak ketiga sebagai open proxy (scraping,
-// port-scan, atau pencucian CORS). Endpoint lokal (Ollama/LM Studio) tetap
-// diizinkan karena SSRF guard isAllowedTarget sudah memblokir IP privat.
-const ALLOWED_PROXY_HOSTS = new Set([
-  'openrouter.ai',
-  'api.openai.com',
-  'api.anthropic.com',
-  'generativelanguage.googleapis.com',
-  'api.groq.com',
-  'api.mistral.ai',
-  'api.deepseek.com',
-  'api.x.ai',
-  'openrouter.ai:443',
-]);
-
-function isAllowedProxyHost(hostname) {
-  const bare = String(hostname || '').toLowerCase().replace(/\.$/, '');
-  return ALLOWED_PROXY_HOSTS.has(bare);
-}
-
+// ===== KEBIJAKAN HOST =====
+// Dulu proksi dibatasi allowlist host provider AI hardcode (audit H-1). Itu
+// mematikan endpoint BYOK di luar daftar — termasuk tunnel HTTPS milik user
+// (ngrok/localtunnel/trycloudflare) dan VPS sendiri — karena proksi satu-satunya
+// jalur yang lolos CORS/PNA, sehingga semua endpoint itu selalu gagal.
+// Kini kebijakannya SAMA dengan /api/fetch: host publik apa pun boleh.
+//
+// Batas keamanan = SSRF guard isAllowedTarget: bentuk literal loopback/IP
+// privat/link-local/metadata (termasuk desimal/hex/oktal & IPv4-mapped IPv6,
+// yang dinormalkan URL parser) DITOLAK. Catatan jujur: resolusi DNS TIDAK
+// divalidasi (hostname yang mengarah ke IP privat tetap lolos) — sama seperti
+// /api/fetch sebelum perubahan ini. Menutup celah itu butuh resolusi DNS per
+// panggilan (biaya latensi + dependensi eksternal) dan di luar lingkup fix ini.
 function jsonEnvelope(obj) {
   return new Response(JSON.stringify(obj), {
     status: 200,
@@ -149,14 +140,10 @@ export async function proxyCore(request, fetchImpl = fetch) {
   if (!target) {
     return jsonEnvelope({ status: 400, ok: false, proxyStatus: 'badrequest', err: 'Missing url parameter' });
   }
-  // SSRF guard: tolak target privat/loopback/metadata SEBELUM fetch.
+  // SSRF guard: tolak bentuk literal privat/loopback/metadata SEBELUM fetch.
+  // Ini batas keamanan proksi (host publik apa pun boleh, seperti /api/fetch).
   if (!isAllowedTarget(target)) {
     return jsonEnvelope({ status: 403, ok: false, proxyStatus: 'forbidden', err: 'Target tidak diizinkan (privat/loopback/metadata/non-http).' });
-  }
-  // Audit H-1: batasi tujuan ke host provider AI yang dikenal agar endpoint
-  // tidak bisa dipakai pihak ketiga sebagai open proxy generik.
-  if (!isAllowedProxyHost(new URL(target).hostname)) {
-    return jsonEnvelope({ status: 403, ok: false, proxyStatus: 'forbidden', err: 'Host tidak ada dalam allowlist proksi.' });
   }
 
   let headerSpec = envelope ? envelope.headers : null;

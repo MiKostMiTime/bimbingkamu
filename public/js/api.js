@@ -22,6 +22,10 @@ const MESSAGES = {
   blocked: 'Layanan memblokir akses lewat server perantara (Cloudflare 403 "Attention Required! / You have been blocked"). Ini BUKAN masalah kunci API — layanan di balik proteksi bot Cloudflare menolak IP datacenter. Hubungi pemilik layanan untuk mengizinkan rentang IP Cloudflare (https://www.cloudflare.com/ips/), atau matikan tantangan bot di path API-nya.',
   permission: 'Layanan menolak akses karena model belum diaktifkan atau izin kuncinya kurang (bukan sekadar kunci salah). Aktifkan model & beri izin yang diperlukan di dashboard penyedia, lalu tempel kembali kuncinya.',
   deployment: 'Layanan sedang diperbarui (menyiapkan model). Tunggu beberapa saat lalu coba lagi; bila terus muncul, periksa status layanan penyedia.',
+  forbidden:
+    'Layanan menolak permintaan (403) tanpa pesan. Kemungkinan penyebab: proteksi bot/WAF menolak asal permintaan, alamat endpoint bukan API model, atau tunnel/server belum siap. Periksa alamat API-nya dan pastikan endpoint publik yang memang mengekspos API.',
+  tunnel:
+    'Tunnel ke server lokal tidak aktif (halaman "endpoint offline" dari tunnel). Jalankan ulang tunnel di komputer yang menjalankan LM Studio/Ollama — mis. `ngrok http 1234` atau `cloudflared tunnel --url http://localhost:1234` — lalu tempel alamat HTTPS BARU di Pengaturan. Alamat tunnel gratis biasanya berganti setiap kali dijalankan ulang, jadi alamat lama tidak akan hidup lagi.',
 };
 
 // Pola untuk memperhalus klasifikasi dari teks error API (lebih akurat
@@ -29,6 +33,10 @@ const MESSAGES = {
 const QUOTA_RE = /quota|RESOURCE_EXHAUSTED|rate limit|too many requests/i;
 const NOTFOUND_RE = /not found|NOT_FOUND|deprecated|retired/i;
 const AUTH_RE = /api key|PERMISSION_DENIED|invalid_api_key|unauthorized/i;
+// Sinyal kredensial yang lebih luas, dipakai khusus untuk memutuskan apakah 403
+// benar-benar soal auth. Penting: 403 dari WAF/firewall ("Access denied",
+// "Forbidden", halaman HTML) TIDAK boleh lagi disebut "kunci API invalid".
+const AUTH_HINT_RE = /api[ _-]?key|unauthorized|unauthenticated|authentication|credential|invalid[ _-]?(token|key)|bearer|permission[ _-]?denied|x-api-key/i;
 // 402 Payment Required (mis. OpenRouter tanpa kredit) sering datang dengan
 // pesan khas; kenali dari teksnya supaya tampil jelas, bukan "unknown".
 const PAYMENT_RE = /insufficient credits?|payment required|add more credits|requires more credits|out of credits|credit balance/i;
@@ -39,6 +47,14 @@ const LMSTUDIO_TOKEN_RE = /lm ?studio api token|lm_api_token/i;
 // Required! / You have been blocked" (sering 403) BUKAN JSON API. Kenali dari
 // isinya agar pesan yang muncul actionable, bukan "kunci API invalid" generik.
 const BLOCKED_RE = /attention required|you have been blocked|blocked_why|enable cookies|cf-cookie-error|antibot|just a moment|checking your browser|i-am-human|cf-challenge|your ip is blocked from/i;
+// Halaman "endpoint offline" dari tunnel (ngrok ERR_NGROK_3200, localtunnel,
+// cloudflared) BUKAN API. Kasus paling umum: tunnel belum dijalankan / alamat
+// tunnel gratis sudah berganti saat dijalankan ulang → alamat lama mati.
+// Kenali dari isinya agar pesan yang muncul = "jalankan ulang tunnel", bukan
+// "ini halaman web, bukan API" yang menyesatkan.
+const TUNNEL_OFFLINE_RE = /err_ngrok_\d+|endpoint .* is offline|tunnel .* not found|no tunnel|tunnel is down|localtunnel.*(unavailable|offline)/i;
+// Host tunnel dikenali dari substring (body HTML panjang, jadi tanpa anchor $).
+const TUNNEL_HOST_RE = /ngrok(-free)?\.(app|dev|io|pizza|pro|page)|loca\.lt|trycloudflare\.com/i;
 
 export function mapApiError(status, apiMessage = '', rawText = '') {
   const detail = { status, apiMessage };
@@ -49,6 +65,9 @@ export function mapApiError(status, apiMessage = '', rawText = '') {
   //     dari body mentah agar pesan actionable, bukan "auth" generik yang
   //     menyesatkan. Menang di atas semua heuristik berbasis teks & status.
   const blockText = String(rawText || '');
+  if (blockText && TUNNEL_OFFLINE_RE.test(blockText) && TUNNEL_HOST_RE.test(blockText)) {
+    return { type: 'tunnel', message: MESSAGES.tunnel, ...detail };
+  }
   if (blockText && BLOCKED_RE.test(blockText)) {
     return { type: 'blocked', message: MESSAGES.blocked, ...detail };
   }
@@ -82,7 +101,14 @@ export function mapApiError(status, apiMessage = '', rawText = '') {
     if (blockText && /attention required|blocked|just a moment|checking your browser/i.test(blockText)) {
       return { type: 'blocked', message: MESSAGES.blocked, ...detail };
     }
-    return { type: 'auth', message: MESSAGES.auth, ...detail };
+    // 403 TANPA sinyal auth sama sekali: jangan mengaku "kunci API invalid"
+    // (menyesatkan — user bisa tanpa kunci). Hanya klaim auth bila pesannya
+    // benar-benar berbau kredensial; selebihnya = layanan menolak permintaan
+    // (WAF/alamat salah/jalan belakang), yang pesannya jauh lebih berguna.
+    if (apiMessage && AUTH_HINT_RE.test(apiMessage)) {
+      return { type: 'auth', message: MESSAGES.auth, ...detail };
+    }
+    return { type: 'forbidden', message: MESSAGES.forbidden, ...detail };
   }
   // 402 = pembayaran/kredit belum siap (mis. OpenRouter kehabisan kredit).
   if (status === 402) return { type: 'payment', message: MESSAGES.payment, ...detail };

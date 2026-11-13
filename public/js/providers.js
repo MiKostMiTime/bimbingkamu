@@ -140,6 +140,23 @@ async function proxyFetch(targetUrl, init = {}) {
   let env; try { env = await res.json(); } catch { env = {}; }
   const bodyText = env.body != null ? env.body : '';
   const envStatus = Number(env.status) || 0;
+  // Proksi menolak SEBELUM menyentuh target (SSRF guard / URL tak valid).
+  // Dulu envelope ini dibungkus jadi Response 403 ber-body kosong, lalu
+  // mapApiError(403,'','') menjatuhkannya ke default "Kunci API tidak valid" —
+  // menyesatkan, karena penyebabnya alamat endpoint, bukan kunci. Pesan asli
+  // proksi (env.err) kini diteruskan apa adanya.
+  if (!env.ok && (env.proxyStatus === 'forbidden' || env.proxyStatus === 'badrequest')) {
+    throw {
+      type: 'badrequest',
+      status: envStatus,
+      message:
+        'Alamat endpoint ini ditolak perantara. Pakai alamat HTTPS publik milik endpoint ' +
+        '(mis. tunnel ngrok/cloudflared untuk server lokal) — localhost/IP LAN tidak bisa ' +
+        'dijangkau dari server perantara.',
+      detail: env.err || '',
+      proxyStatus: env.proxyStatus,
+    };
+  }
   // Audit P1-7: proksi membalas `status: 0` saat upstream tak pernah menjawab
   // (proxyStatus 'threw'/'timeout'). Dulu kode menyusun Response ber-status 0 →
   // spesifikasi Response MENOLAK (RangeError) sehingga pesan asli (env.err)
@@ -568,16 +585,21 @@ export async function probeEndpoint(baseUrl, apiKey = '', kind = 'oi') {
     for (const modelsPath of candidates) {
       let res;
       try {
-        res = await providerFetch(`${candidateBase}${modelsPath}`, { headers: getAdapter(kind).authHeaders(apiKey) });
-      } catch {
-        // Browser melempar TypeError tanpa detail saat: offline, URL salah,
-        // ATAU respons diblokir CORS (server tidak mengirim
-        // Access-Control-Allow-Origin). Sebut keduanya di pesan.
-        lastErr = {
-          type: 'network',
-          message:
-            'Tidak bisa terhubung ke layanan. Periksa alamat & koneksi. Bila diakses dari perangkat lain, pastikan server aktif dan mengizinkan akses browser (CORS).',
-        };
+        // joinProviderPath (bukan concat) agar base yang sudah berisi path
+        // (mis. ".../v1") tidak jadi dobel: ".../v1" + "/v1/models" = ".../v1/v1/models".
+        res = await providerFetch(joinProviderPath(candidateBase, modelsPath), { headers: getAdapter(kind).authHeaders(apiKey) });
+      } catch (e) {
+        // Bila providerFetch/proxyFetch sudah mengklasifikasi error dengan type
+        // (mis. 'tunnel', atau penolakan proksi 'badrequest'), PERTAHANKAN —
+        // jangan timpa jadi pesan jaringan generik yang menyembunyikan penyebab
+        // sebenarnya. Sisanya (TypeError mentah: offline/URL salah/CORS) → network.
+        lastErr = (e && typeof e.type === 'string' && e.message)
+          ? e
+          : {
+              type: 'network',
+              message:
+                'Tidak bisa terhubung ke layanan. Periksa alamat & koneksi. Bila diakses dari perangkat lain, pastikan server aktif dan mengizinkan akses browser (CORS).',
+            };
         continue; // coba kandidat berikutnya
       }
       // Baca body SEKALI sebagai teks: status 200 tidak cukup (LM Studio
@@ -588,7 +610,11 @@ export async function probeEndpoint(baseUrl, apiKey = '', kind = 'oi') {
       try { bodyText = await res.text(); } catch {}
       if (looksLikeHtml(res, bodyText)) {
         htmlCount++;
-        lastErr = htmlPageError(base);
+        const pageErr = mapApiError(0, bodyText.slice(0, 800), bodyText);
+        // Halaman "endpoint offline" tunnel (ngrok/localhost) tampak seperti
+        // halaman web biasa, tapi penyebab & solusinya spesifik (jalankan ulang
+        // tunnel + tempel alamat baru). Pakai pesannya, jangan "bukan API".
+        lastErr = pageErr.type === 'tunnel' ? pageErr : htmlPageError(base);
         continue; // coba kandidat berikutnya
       }
       if (res.ok) {
