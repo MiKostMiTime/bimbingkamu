@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const SOURCES_RELS = ['js', 'css'];
-const OUTPUTS_RELS = ['js/app.bundle.js', 'css/styles.min.css'];
+const OUTPUTS_RELS = ['public/js/app.bundle.js', 'public/css/styles.min.css'];
 
 // --- murni: statistik mtime (uji tanpa filesystem) ---
 export function maxMtime(entries) {
@@ -63,7 +63,7 @@ export function gatherEntries(root = ROOT) {
 
 // --- jalankan build esbuild (mirui scripts/build.mjs) -> segarkan output ---
 export async function runBuild(root = ROOT) {
-  const entry = path.join(root, 'js/app.js');
+  const entry = path.join(root, 'public/js/app.js');
   if (!existsSync(entry)) throw new Error(`entry point tidak ditemukan: ${entry}`);
 
   await build({
@@ -73,19 +73,19 @@ export async function runBuild(root = ROOT) {
     platform: 'browser',
     target: ['es2019'],
     minify: true,
-    outfile: path.join(root, 'js/app.bundle.js'),
+    outfile: path.join(root, 'public/js/app.bundle.js'),
     logLevel: 'info',
     legalComments: 'none',
   });
 
-  const cssOrder = ['css/variables.css', 'css/main.css', 'css/components.css'];
+  const cssOrder = ['public/css/variables.css', 'public/css/main.css', 'public/css/components.css'];
   let css = '';
   for (const f of cssOrder) {
     const p = path.join(root, f);
     if (existsSync(p)) css += readFileSync(p, 'utf8') + '\n\n';
   }
   const out = await transform(css, { loader: 'css', minify: true });
-  writeFileSync(path.join(root, 'css/styles.min.css'), out.code);
+  writeFileSync(path.join(root, 'public/css/styles.min.css'), out.code);
 }
 
 function fmt(ms) { return new Date(ms).toLocaleString(); }

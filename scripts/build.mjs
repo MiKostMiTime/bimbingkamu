@@ -5,8 +5,8 @@
 // jumlah request + biaya parse/compile di perangkat rendah.
 //
 // Cara pakai:  npm run build
-// Output:      js/app.bundle.js   (semua modul app → 1 file)
-//              css/styles.min.css (variables+main+components)
+// Output:      public/js/app.bundle.js  (semua modul app → 1 file)
+//              public/css/styles.min.css
 // Catatan:     hasil BUILD harus DI-COMMIT agar deploy statis
 //              (Cloudflare Pages) tetap jalan tanpa langkah CI.
 // =========================================================
@@ -23,22 +23,22 @@ const log = (msg) => console.log(`[build] ${msg}`);
 // di-resolve saat runtime dari document.baseURI -> tetap benar setelah bundle.
 log('membundle JS app...');
 await build({
-  entryPoints: ['js/app.js'],
+  entryPoints: ['public/js/app.js'],
   bundle: true,
   format: 'esm',
   platform: 'browser',
   target: ['es2019'],
   minify: true,
-  outfile: 'js/app.bundle.js',
+  outfile: 'public/js/app.bundle.js',
   logLevel: 'info',
   legalComments: 'none',
 });
 
 // ---- P1: minify CSS -> 1 file (urutkan: variables > main > components) ----
 log('meminify CSS...');
-const cssOrder = ['css/variables.css', 'css/main.css', 'css/components.css'];
+const cssOrder = ['public/css/variables.css', 'public/css/main.css', 'public/css/components.css'];
 let css = cssOrder.map((f) => readFileSync(f, 'utf8')).join('\n\n');
 const out = await transform(css, { loader: 'css', minify: true });
-writeFileSync('css/styles.min.css', out.code);
+writeFileSync('public/css/styles.min.css', out.code);
 
-log('selesai -> js/app.bundle.js + css/styles.min.css');
+log('selesai -> public/js/app.bundle.js + public/css/styles.min.css');

@@ -13,11 +13,13 @@
     "test": "node --test",
     "build": "if [ -f scripts/build.mjs ]; then node scripts/build.mjs; else echo \"static: bundle prebuilt, skip build\"; fi",
     "check:bundle": "node scripts/bundle-check.mjs",
-    "check": "node scripts/bundle-check.mjs --check"
+    "check": "node scripts/bundle-check.mjs --check",
+    "deploy": "wrangler pages deploy"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
-    "playwright-core": "^1.65.0"
+    "playwright-core": "^1.65.0",
+    "wrangler": "^4.161.0"
   },
   "keywords": [],
   "author": "",
