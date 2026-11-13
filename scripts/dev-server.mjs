@@ -9,6 +9,7 @@
 //         TAVILY_API_KEY=tvly-... npm run dev
 // =========================================================
 import http from 'node:http';
+import { readFileSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -111,6 +112,25 @@ async function serveStatic(req, res, pathname) {
   if (req.method === 'HEAD') res.end();
   else res.end(data);
 }
+
+// ---- Muat .env lokal bila ada (TANPA dependensi eksternal) ----
+// Hanya mengisi variable yang BELUM di-set di lingkungan, supaya Secret
+// Cloudflare / CI tetap menang (don't clobber real env).
+function loadDotEnv(file = '.env') {
+  try {
+    const raw = readFileSync(file, 'utf8');
+    for (const line of raw.split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+      if (!m) continue;
+      let val = m[2].trim().replace(/^"|"$/g, '').replace(/^'|'$/g, '');
+      if (/^\#/.test(val)) continue; // baris komentar inline
+      if (process.env[m[1]] === undefined) process.env[m[1]] = val;
+    }
+  } catch { /* .env opsional: aba bila tak ada / tak bisa dibaca */ }
+}
+
+// Panggil SEBELUM handler butuh TAVILY_API_KEY.
+loadDotEnv();
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || `localhost:${PORT}`}`);
