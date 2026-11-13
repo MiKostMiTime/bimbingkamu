@@ -567,7 +567,7 @@ function buildEndpointForm(p) {
 
   const f1 = mk('div', 'field');
   const l1 = mk('label', 'field__label'); l1.htmlFor = 'epEditUrl'; l1.textContent = 'Alamat API (URL)';
-  const i1 = mk('input', 'input'); i1.id = 'epEditUrl'; i1.type = 'text'; i1.placeholder = 'https://<host>/v1';
+  const i1 = mk('input', 'input'); i1.id = 'epEditUrl'; i1.type = 'text'; i1.placeholder = 'https://namaprovider/v1';
   i1.value = p ? p.baseUrl : ''; i1.autocomplete = 'off'; i1.spellcheck = false;
   const h1 = mk('p', 'field__hint');
   h1.textContent = 'Contoh: https://openrouter.ai/api/v1 untuk layanan cloud, atau http://localhost:1234 untuk LM Studio di komputer ini. Pakai alamat API-nya, bukan alamat halaman dashboard.';
@@ -580,7 +580,7 @@ function buildEndpointForm(p) {
   f2.append(l2, i2);
 
   const f3 = mk('div', 'field');
-  const l3 = mk('label', 'field__label'); l3.htmlFor = 'epEditKey'; l3.textContent = 'Kunci API';
+  const l3 = mk('label', 'field__label'); l3.htmlFor = 'epEditKey'; l3.textContent = 'Kunci API (opsional)';
   const keyrow = mk('div', 'endpoint-edit__keyrow');
   const i3 = mk('input', 'input endpoint-edit__key'); i3.id = 'epEditKey'; i3.type = 'password'; i3.placeholder = 'Masukkan API key';
   i3.value = p ? (p.key || '') : ''; i3.autocomplete = 'off'; i3.spellcheck = false;
