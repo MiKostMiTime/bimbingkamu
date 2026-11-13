@@ -69,9 +69,19 @@ const FETCH_LOG_KEY = 'bimbingkamu._fetchLog';
 const FETCH_LOG_MAX = 40;
 function logFetch(kind, detail = '') {
   try {
+    // Audit M-3: sanitasi kredensial sebelum menyimpan ke localStorage.
+    // Buang query param kunci API yang umum (key/api_key/token) dan header
+    // Authorization agar log diagnostik tidak pernah menyimpan secret.
+    let safe = String(detail);
+    safe = safe.replace(/([?&](?:key|api[_-]?key|access[_-]?token|token)=)[^&\s]*/gi, '$1[redacted]');
+    safe = safe.replace(/(authorization|x-api-key|api-key)\s*:\s*\S+/gi, '$1: [redacted]');
+    safe = safe.replace(/(Bearer\s+)[A-Za-z0-9._-]+/gi, '$1[redacted]');
+    safe = safe.replace(/sk-[A-Za-z0-9]{10,}/g, '[redacted]');
+    detail = safe;
     let arr = [];
     try { arr = JSON.parse(localStorage.getItem(FETCH_LOG_KEY) || '[]'); } catch {}
     if (!Array.isArray(arr)) arr = [];
+    arr.push({ t: Date.now(), k: kind, d: String(detail).slice(0, 240) });
     arr.push({ t: Date.now(), k: kind, d: String(detail).slice(0, 240) });
     if (arr.length > FETCH_LOG_MAX) arr = arr.slice(-FETCH_LOG_MAX);
     localStorage.setItem(FETCH_LOG_KEY, JSON.stringify(arr));

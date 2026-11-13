@@ -36,6 +36,7 @@ export const STORAGE_KEYS = {
   materiFiles: 'bimbingkamu.materiFiles', // legacy v1 (file global) — dimigrasi ke session.files
   onboardingDone: 'bimbingkamu.onboardingDone',
   settings: 'bimbingkamu.settings',
+  searchKey: 'bimbingkamu.tavilyKey',
   session: 'bimbingkamu.session', // legacy v1 — dimigrasi ke `sessions`
   sessions: 'bimbingkamu.sessions',
   activeSession: 'bimbingkamu.activeSession',

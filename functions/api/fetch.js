@@ -16,6 +16,17 @@ export const MAX_CHARS = 200000;
 const MAX_BYTES = 2 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 10000;
 const MAX_REDIRECTS = 4;
+// Banyak situs menolak (403) User-Agent bot. Pakai UA browser biasa agar
+// halaman publik bisa dibaca; tetap sopan (tanpa cookie/login pengguna).
+const BROWSER_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const BROWSER_HEADERS = {
+  accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5',
+  'accept-language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+  'user-agent': BROWSER_UA,
+  'cache-control': 'no-cache',
+  'upgrade-insecure-requests': '1',
+};
 
 const NAMED_ENTITIES = {
   amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
@@ -115,10 +126,7 @@ export async function onRequestGet({ request }) {
       if (!isAllowedTarget(current)) return json({ ok: false, error: 'forbidden' }, 403);
       res = await fetch(current, {
         redirect: 'manual',
-        headers: {
-          accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1',
-          'user-agent': 'BimbingKamu/1.0 (materi belajar)',
-        },
+        headers: BROWSER_HEADERS,
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       const location = res.status >= 300 && res.status < 400 && res.status !== 304
@@ -132,7 +140,10 @@ export async function onRequestGet({ request }) {
   }
 
   if (!res) return json({ ok: false, error: 'fetch-network' }, 502);
-  if (!res.ok) return json({ ok: false, error: 'fetch-status', status: res.status }, 502);
+  if (!res.ok) {
+    const blocked = res.status === 401 || res.status === 403 || res.status === 429 || res.status === 451;
+    return json({ ok: false, error: blocked ? 'blocked' : 'fetch-status', status: res.status }, 502);
+  }
 
   const type = (res.headers.get('content-type') || '').toLowerCase();
   const isHtml = type.includes('text/html') || type.includes('application/xhtml');

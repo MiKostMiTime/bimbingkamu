@@ -1353,6 +1353,17 @@
 }
 
 /* ===== COMPOSER ===== */
+.composer__disclaimer {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: var(--space-2) var(--space-4) 0;
+  font-size: 0.75rem;
+  width: 100%;
+  text-align: center;
+  color: var(--color-text-secondary);
+  justify-content: center;
+}
+
 .composer {
   padding: var(--space-3) var(--space-4) var(--space-4);
   background: var(--color-surface);

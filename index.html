@@ -33,7 +33,7 @@
 
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https:; connect-src https: http:; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; manifest-src 'self'"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https:; connect-src 'self' https:; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; manifest-src 'self'"
     />
 
     <!-- Library rendering: markdown + sanitasi. PDF.js dan KaTeX
@@ -137,6 +137,7 @@
           <div class="chat-messages" id="chatMessages" role="log" aria-live="polite"></div>
         </div>
 
+        <p class="composer__disclaimer" role="note">AI dapat membuat kesalahan — verifikasi jawaban dengan materimu.</p>
         <div class="composer">
           <div class="composer__inner">
             <div class="composer__input-wrap">
@@ -341,8 +342,9 @@
                 <button id="materiUrlBtn" class="btn btn--secondary" type="button">Ambil</button>
               </div>
               <p class="field__hint" id="materiUrlHint">
-                Halaman dibaca jadi teks materi sesi. Halaman yang butuh login
-                atau dimuat dengan JavaScript mungkin tidak terbaca.
+                Halaman dibaca jadi teks materi sesi. Bila server belum punya
+                pembaca halaman, dipakai pembaca publik r.jina.ai. Halaman yang
+                butuh login tetap tidak terbaca.
               </p>
             </div>
           </div>
@@ -397,6 +399,23 @@
           <p class="field__hint" id="webSearchHint">
             Tutor boleh mencari web bila materi kurang. Sumber dan tanggal
             akses ditampilkan di bawah jawaban.
+          </p>
+        </div>
+        <div class="field">
+          <label class="field__label" for="searchKeyInput">Kunci Tavily (opsional)</label>
+          <input
+            id="searchKeyInput"
+            class="input"
+            type="password"
+            placeholder="tvly-..."
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <p class="field__hint">
+            Isi hanya bila server belum punya kunci pencarian. Kunci disimpan di
+            browser ini saja dan tidak ditampilkan di layar. Belum punya?
+            Ambil gratis di
+            <a href="https://tavily.com" target="_blank" rel="noopener">tavily.com</a>.
           </p>
         </div>
         <div class="slider">

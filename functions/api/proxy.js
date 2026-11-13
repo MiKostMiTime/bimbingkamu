@@ -76,6 +76,28 @@ function headersToPairs(headers) {
 
 // Envelope JSON balasan non-stream. Method dipakai target, tapi status HTTP
 // yang dikirim ke klien selalu 200 agar body envelope terbaca lewat CORS biasa.
+// ===== ALLOWLIST HOST (audit H-1) =====
+// Proksi hanya melayani host provider AI/model yang dikenal. Host lain ditolak
+// agar endpoint tidak bisa dipakai pihak ketiga sebagai open proxy (scraping,
+// port-scan, atau pencucian CORS). Endpoint lokal (Ollama/LM Studio) tetap
+// diizinkan karena SSRF guard isAllowedTarget sudah memblokir IP privat.
+const ALLOWED_PROXY_HOSTS = new Set([
+  'openrouter.ai',
+  'api.openai.com',
+  'api.anthropic.com',
+  'generativelanguage.googleapis.com',
+  'api.groq.com',
+  'api.mistral.ai',
+  'api.deepseek.com',
+  'api.x.ai',
+  'openrouter.ai:443',
+]);
+
+function isAllowedProxyHost(hostname) {
+  const bare = String(hostname || '').toLowerCase().replace(/\.$/, '');
+  return ALLOWED_PROXY_HOSTS.has(bare);
+}
+
 function jsonEnvelope(obj) {
   return new Response(JSON.stringify(obj), {
     status: 200,
@@ -130,6 +152,11 @@ export async function proxyCore(request, fetchImpl = fetch) {
   // SSRF guard: tolak target privat/loopback/metadata SEBELUM fetch.
   if (!isAllowedTarget(target)) {
     return jsonEnvelope({ status: 403, ok: false, proxyStatus: 'forbidden', err: 'Target tidak diizinkan (privat/loopback/metadata/non-http).' });
+  }
+  // Audit H-1: batasi tujuan ke host provider AI yang dikenal agar endpoint
+  // tidak bisa dipakai pihak ketiga sebagai open proxy generik.
+  if (!isAllowedProxyHost(new URL(target).hostname)) {
+    return jsonEnvelope({ status: 403, ok: false, proxyStatus: 'forbidden', err: 'Host tidak ada dalam allowlist proksi.' });
   }
 
   let headerSpec = envelope ? envelope.headers : null;
@@ -216,6 +243,10 @@ export async function proxyCore(request, fetchImpl = fetch) {
     } else if (net.headers) {
       for (const [k, v] of Object.entries(net.headers || {})) headers[k] = v;
     }
+    // Audit L-3: buang header sensitif upstream agar tidak diteruskan ke klien.
+    for (const k of Object.keys(headers)) {
+      if (/^(set-cookie|cookie|authorization|proxy-authorization)$/i.test(k)) delete headers[k];
+    }
     clearTimeout(timerT);
     return jsonEnvelope({
       status: net.status,
@@ -226,11 +257,13 @@ export async function proxyCore(request, fetchImpl = fetch) {
     });
   } catch (e) {
     clearTimeout(timerT);
-    const msg = String((e && e.message) || e);
+    // Audit L-1: pesan exception internal tidak di-echo ke klien — cukup kode
+    // generik. Detail tetap tersedia via console untuk debugging operator.
+    console.error('[proxy] upstream error:', e && e.message ? e.message : e);
     return jsonEnvelope({
       status: 0, ok: false,
       proxyStatus: timedOut ? 'timeout' : 'threw',
-      err: msg, body: '',
+      err: timedOut ? 'timeout' : 'upstream-error',
     });
   }
 }

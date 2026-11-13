@@ -1,20 +1,40 @@
 // =========================================================
 // BimbingKamu — PENCARIAN WEB (klien)
 // Satu pintu ke Pages Function /api/search (Tavily di sisi server).
-// Kunci API tidak pernah masuk browser.
+// Mode BYOK: siswa boleh menempel kunci Tavily sendiri; kunci disimpan di
+// browser ini dan dipakai untuk memanggil Tavily langsung (fallback tanpa
+// Functions) atau lewat server bila server punya kunci.
 //
 // Hasil disimpan di cache memori 10 menit: menekan "Regenerasi" tidak
 // membayar pencarian yang sama dua kali.
 // =========================================================
+import { STORAGE_KEYS } from './config.js';
+import { storage } from './storage.js';
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const CACHE_MAX = 30;
 const BACKEND_TTL_MS = 5 * 60 * 1000;
+const TAVILY_ENDPOINT = 'https://api.tavily.com/search';
 export const MAX_RESULTS = 5;
 
 const resultsCache = new Map(); // kueri ternormalisasi → { at, results }
 let backendStatus = 'unknown'; // 'unknown' | 'ready' | 'missing'
 let backendCheckedAt = 0;
+
+// Kunci Tavily milik siswa (BYOK). String kosong = pakai kunci server.
+export function getSearchKey() {
+  const value = storage.get(STORAGE_KEYS.searchKey, '');
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+export function setSearchKey(value) {
+  const key = String(value ?? '').trim();
+  if (key) storage.set(STORAGE_KEYS.searchKey, key);
+  else storage.remove(STORAGE_KEYS.searchKey);
+  // Kesiapan server berubah → cek ulang saat UI disegarkan.
+  backendStatus = 'unknown';
+  backendCheckedAt = 0;
+}
 
 function isFresh(entry) {
   return Boolean(entry) && Date.now() - entry.at < CACHE_TTL_MS;
@@ -97,14 +117,21 @@ export function clearSearchCache() {
   resultsCache.clear();
 }
 
-// Cek sekali (di-cache 5 menit) apakah server punya kunci Tavily. Hosting
-// statis tanpa Functions → 404/HTML → 'missing', jadi toggle dimatikan jujur.
+// Cek kesiapan: kunci BYOK → langsung siap (panggilan Tavily dari browser).
+// Tanpa kunci → tanya /api/search; hosting statis tanpa Functions = missing.
 export async function checkSearchBackend({ force = false, fetchImpl = fetch } = {}) {
   if (!force && backendStatus !== 'unknown' && Date.now() - backendCheckedAt < BACKEND_TTL_MS) {
     return backendStatus === 'ready';
   }
+  if (getSearchKey()) {
+    backendStatus = 'ready';
+    backendCheckedAt = Date.now();
+    return true;
+  }
   try {
-    const res = await fetchImpl('/api/search', { headers: { accept: 'application/json' } });
+    const res = await fetchImpl('/api/search', {
+      headers: { accept: 'application/json' },
+    });
     const data = res.ok ? await res.json().catch(() => null) : null;
     backendStatus = data && data.ok && data.configured ? 'ready' : 'missing';
   } catch {
@@ -117,10 +144,10 @@ export async function checkSearchBackend({ force = false, fetchImpl = fetch } = 
 function mapSearchError(status, data) {
   const code = data && data.error;
   if (code === 'search-not-configured') {
-    return { type: 'search', message: 'Pencarian web belum diaktifkan di server ini.' };
+    return { type: 'search', message: 'Pencarian web belum diaktifkan. Isi kunci Tavily di Pengaturan.' };
   }
-  if (code === 'search-auth') {
-    return { type: 'search', message: 'Kunci pencarian web di server ditolak. Periksa kunci Tavily.' };
+  if (code === 'search-auth' || status === 401 || status === 403) {
+    return { type: 'search', message: 'Kunci Tavily ditolak. Periksa kuncinya.' };
   }
   if (code === 'search-quota' || status === 429) {
     return { type: 'search', message: 'Kuota pencarian web habis. Coba lagi nanti.' };
@@ -131,6 +158,35 @@ function mapSearchError(status, data) {
   return { type: 'search', message: 'Layanan pencarian web sedang tidak bisa dihubungi.' };
 }
 
+// Panggilan langsung dari browser memakai kunci Tavily milik siswa. Dipakai
+// bila server tidak punya Functions /api/search (mis. preview statis) —
+// Tavily mengizinkan CORS, jadi pencarian tetap jalan tanpa backend.
+async function searchViaTavily(q, { limit, signal, fetchImpl }) {
+  let res;
+  try {
+    res = await fetchImpl(TAVILY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        api_key: getSearchKey(),
+        query: q,
+        topic: 'general',
+        search_depth: 'basic',
+        max_results: limit,
+        include_answer: false,
+        include_raw_content: false,
+      }),
+      signal,
+    });
+  } catch (err) {
+    if (err && err.name === 'AbortError') throw err;
+    throw { type: 'search', message: 'Tidak bisa menghubungi Tavily. Periksa koneksi internet.' };
+  }
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data) throw mapSearchError(res.status, data);
+  return normalizeSearchResults(data.results, limit);
+}
+
 // Hasil: { results, cached }. Melempar { type:'search', message } yang ramah.
 export async function searchWeb(query, { limit = MAX_RESULTS, signal, fetchImpl = fetch } = {}) {
   const q = String(query ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
@@ -139,6 +195,13 @@ export async function searchWeb(query, { limit = MAX_RESULTS, signal, fetchImpl 
   const key = q.toLowerCase();
   const hit = resultsCache.get(key);
   if (isFresh(hit)) return { results: hit.results, cached: true };
+
+  // Kunci sendiri → langsung ke Tavily (tidak bergantung pada Functions).
+  if (getSearchKey()) {
+    const results = await searchViaTavily(q, { limit, signal, fetchImpl });
+    remember(key, results);
+    return { results, cached: false };
+  }
 
   let res;
   try {

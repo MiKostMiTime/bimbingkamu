@@ -88,10 +88,13 @@ export function showModal({ title, text, body = '', actions = [], onDismiss, clo
   }
 
   // Konten kustom (mis. form input) di antara teks dan baris aksi.
+  // Audit L-2: jalur string→innerHTML dihapus. body kini hanya menerima Node
+  // (elemen DOM) — string dianggap teks polos dan di-set via textContent agar
+  // tidak ada jalur injeksi HTML dari data eksternal.
   if (body) {
     const wrap = document.createElement('div');
     wrap.className = 'modal__body';
-    if (typeof body === 'string') wrap.innerHTML = body;
+    if (typeof body === 'string') wrap.textContent = body;
     else wrap.appendChild(body);
     modal.appendChild(wrap);
   }
@@ -245,9 +248,9 @@ export function showOnboarding({ onComplete, onSkip, onConnect, onModel }) {
       <div class="onboard-providers" role="group" aria-label="Layanan AI bawaan">${presets}</div>
       <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
         <label class="field__label" for="onboardUrl">Alamat API (URL)</label>
-        <input id="onboardUrl" class="input" type="text" placeholder="https://openrouter.ai/api/v1" autocomplete="off" spellcheck="false" />
+        <input id="onboardUrl" class="input" type="text" placeholder="Silakan masukan URL terlebih dahulu" autocomplete="off" spellcheck="false" required />
         <p class="field__hint">Untuk LM Studio di komputer sendiri, isi <code>http://localhost:1234</code>. Pakai alamat API-nya, bukan halaman dashboard.</p>
-        <input id="onboardName" class="input" type="text" placeholder="Nama layanan (opsional)" aria-label="Nama layanan" autocomplete="off" />
+        <input id="onboardName" class="input" type="text" placeholder="Nama layanan" aria-label="Nama layanan" autocomplete="off" spellcheck="false" required />
         <input id="onboardKey" class="input" type="password" placeholder="Kunci API (opsional)" aria-label="Kunci API" autocomplete="off" />
         <div style="display:flex;gap:8px;align-items:center">
           <button id="onboardConnect" class="btn btn--secondary" type="button">Hubungkan</button>
@@ -282,6 +285,7 @@ export function showOnboarding({ onComplete, onSkip, onConnect, onModel }) {
       const name = nameInput.value.trim();
       const key = keyInput.value.trim();
       if (!baseUrl) { status.textContent = 'Isi alamat API dulu, ya.'; return; }
+      if (!name) { status.textContent = 'Isi nama layanan dulu, ya.'; return; }
       btn.disabled = true;
       status.textContent = 'Menghubungkan…';
       try {

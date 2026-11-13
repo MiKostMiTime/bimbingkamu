@@ -2,21 +2,23 @@
 
 Tutor belajar Socratic berbasis RAG untuk siswa SMA Indonesia. Alih-alih langsung menjawab, BimbingKamu membimbingmu menemukan jawaban **dari materi milikmu sendiri** — lebih dalam dan lebih fokus, dengan halusinasi yang ditekan lewat batasan prompt dan penandaan kutipan yang tidak ditemukan di materi (bukan jaminan mutlak).
 
-Proyek ini memakai skema **BYOK** (Bring Your Own Key): kamu memasukkan kunci API *provider* milikmu — OpenRouter, Gemini AI Studio, atau OpenAI (dan endpoint lain yang kompatibel dengan OpenAI). Kunci hanya tersimpan di `localStorage` browser dan hanya dikirim ke endpoint yang kamu pilih; tidak ada backend, tidak ada server, tidak ada pelacakan.
+Proyek ini memakai skema **BYOK** (Bring Your Own Key): kamu memasukkan kunci API *provider* milikmu — OpenRouter, Gemini AI Studio, atau OpenAI (dan endpoint lain yang kompatibel dengan OpenAI). Kunci hanya tersimpan di `localStorage` browser dan hanya dikirim ke endpoint yang kamu pilih (atau ke Pages Function milik aplikasi ini untuk proksi/pencarian). Tidak ada database, tidak ada pelacakan.
 
 ## Menjalankan
 
-Tidak ada build step. Jalankan local server apa pun di folder ini:
+Tidak ada build step. Untuk pengembangan lengkap — termasuk Pages Functions `/api/proxy`, `/api/search`, dan `/api/fetch` — pakai dev server bawaan:
 
 ```bash
-python3 -m http.server 5500
-# atau
-npx serve .
+npm run dev
+# opsional, agar pencarian web aktif di lokal:
+TAVILY_API_KEY=tvly-... npm run dev
 ```
 
 Lalu buka <http://localhost:5500>.
 
 > Wajib memakai server (bukan buka file langsung), karena aplikasi memakai ES Modules yang diblokir pada `file://`.
+>
+> Server statis biasa (`python3 -m http.server` / `npx serve .`, atau preview bawaan IDE) tetap bisa dipakai: pencarian web memakai kunci Tavily yang ditempel di Pengaturan (panggilan langsung dari browser), dan lampiran URL jatuh ke pembaca publik `r.jina.ai` bila `/api/fetch` tidak tersedia.
 
 ### Mendapatkan kunci API
 
@@ -37,7 +39,7 @@ Aplikasi ini sepenuhnya statis, dengan tiga Pages Function di `functions/api/`: 
 1. Hubungkan repository ini di dashboard Cloudflare Pages.
 2. Build command: `npm run build` (opsional — bundle sudah di-commit). Output directory: `/` (root repo).
 3. `functions/` dideteksi otomatis sebagai Pages Functions; `_headers` dan `_redirects` di root dipakai sebagai konfigurasi cache/keamanan dan SPA fallback.
-4. Di **Settings → Environment variables**, tambahkan secret `TAVILY_API_KEY` (dari [tavily.com](https://tavily.com)). Tanpa kunci ini aplikasi tetap jalan, tetapi toggle pencarian web dimatikan dan tutor menjawab dari materi/pengetahuan model.
+4. Di **Settings → Environment variables**, tambahkan secret `TAVILY_API_KEY` (dari [tavily.com](https://tavily.com)). Tanpa kunci ini aplikasi tetap jalan, tetapi pencarian web nonaktif sampai kunci diisi di server atau siswa menempel kuncinya sendiri di **Pengaturan → Kunci Tavily (opsional)**.
 
 Pastikan path relatif tetap utuh (struktur folder `css/`, `js/`, `assets/` tidak boleh diubah). Untuk uji lokal dengan Pages Function: `TAVILY_API_KEY=... npx wrangler pages dev .`.
 
@@ -67,7 +69,7 @@ npx wrangler pages deploy . --project-name bimbingkamu
 - **BYOK** — masukkan kunci API *provider* (opsional; endpoint lokal tak butuh) dengan toggle lihat/sembunyikan, tersimpan otomatis di `localStorage`, indikator privasi, dan tombol hapus semua data.
 - **Materi (RAG)** — **lampirkan file** `.txt`/`.md`/`.pdf`/`.docx` (drag & drop atau klik; teks PDF diekstrak via pdf.js, .docx via mammoth — semua di browser) **atau tempel alamat website** yang isinya dibaca server lalu disimpan sebagai teks materi. File tampil sebagai **chip** (nama + jumlah karakter + tombol lepas) — teks hasil ekstraksi **tidak ditampilkan** di panel, tapi tetap ikut dikirim ke model. File **spesifik per sesi chat** (tiap chat punya lampirannya sendiri). Penghitung karakter real-time, tersimpan antar sesi.
 - **Pengaturan belajar** — 4 mode (Paham Konsep, **Penjelasan** — penjelasan tuntas tanpa interogasi, Latihan Soal, Persiapan Ujian), slider kedalaman bimbingan 1–5 (mengubah aturan prompt; parameter temperature tidak dipakai lagi karena sudah deprecated di banyak model, diganti `thinkingLevel` per mode), **gaya bahasa** Santai ↔ Formal (menyesuaikan derajat keakraban bahasa tanpa mengubah metode Socratic), dan pilihan model — daftarnya **disegarkan otomatis dari endpoint terpilih**, jadi model yang sudah dinonaktifkan provider tidak lagi ditawarkan (bebas error 404). Provider dipilih dari dropdown; tiga bawaan langsung tersedia (**OpenRouter**, **Gemini AI Studio**, **OpenAI**), atau hubungkan endpoint [OI]-compatible sendiri.
-- **Cari web** — toggle "Cari web untuk pelengkap" memakai alat `web_search` sungguhan di balik `/api/search` (Tavily, 5 hasil, satu putaran). Kunci Tavily hanya ada di server. Toggle otomatis mati bila server belum dikonfigurasi atau layanan tidak bisa memanggil alat, dan tutor dilarang mengaku mencari. Sumber tampil **bernomor** (cocok dengan penanda `[1]` di jawaban) beserta **tanggal akses**, plus tombol **＋ Simpan ke materi**. Bila model memilih tidak mencari, jawaban diberi label jujur "Dari pengetahuan model".
+- **Cari web** — toggle "Cari web untuk pelengkap" memakai alat `web_search` sungguhan (Tavily, 5 hasil, satu putaran). Kunci Tavily bisa disimpan di server (`TAVILY_API_KEY`) atau ditempel siswa sendiri di Pengaturan (BYOK, tersimpan lokal; tanpa server pun tetap jalan). Toggle otomatis mati bila belum ada kunci atau layanan tidak bisa memanggil alat, dan tutor dilarang mengaku mencari. Sumber tampil **bernomor** (cocok dengan penanda `[1]` di jawaban) beserta **tanggal akses**, plus tombol **＋ Simpan ke materi**. Bila model memilih tidak mencari, jawaban diberi label jujur "Dari pengetahuan model".
 - **Riwayat sesi** — sidebar kiri menampilkan semua sesi (judul otomatis dari pertanyaanmu + tanggal relatif, maks. 50); klik untuk membuka kembali, hapus per sesi, auto-save tiap giliran, migrasi otomatis dari format versi lama.
 - **Percakapan** — multi-turn, render markdown + sanitasi, **rumus LaTeX tampil sebagai rumus visual via KaTeX** (dimuat on-demand; offline tetap terbaca sebagai teks mentah), kutipan materi `[[...]]` disorot sebagai chip (yang tidak ditemukan di materi diberi tanda *belum terverifikasi*), efek mengetik progresif dengan tombol Lewati, sapaan pembuka otomatis.
 - **Data & statistik** — timer waktu aktif (berhenti saat idle/tab tersembunyi), penghitung petunjuk, penghitung giliran dialog, ekspor percakapan ke file `.md` (bagian dari eksperimen STEM), **dan ekspor kartu studi ke gambar `.png`** (shareable untuk WA/IG) lewat menu titik-tiga di tiap sesi.

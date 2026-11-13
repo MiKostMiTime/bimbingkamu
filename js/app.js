@@ -14,7 +14,7 @@ import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
 import { extractPdfText } from './pdf.js';
 import { extractDocxText } from './docx.js';
 import { buildSystemPrompt, buildMaterialMessage, buildOpeningPrompt } from './prompt.js';
-import { checkSearchBackend, isSearchBackendReady } from './search.js';
+import { checkSearchBackend, isSearchBackendReady, getSearchKey, setSearchKey } from './search.js';
 import { fetchUrlMaterial } from './url-material.js';
 import {
   createSession,
@@ -109,6 +109,7 @@ const dom = {
   setupGuideBody: $('setupGuideBody'),
   connStatus: $('headerConnStatus'),
   webSearchToggle: $('webSearchToggle'),
+  searchKeyInput: $('searchKeyInput'),
   toneSegment: $('toneSegment'),
   toneButtons: $$('#toneSegment .segmented__btn'),
   timer: $('timerValue'),
@@ -264,7 +265,7 @@ async function refreshWebSearchUI() {
     const text = !supported
       ? 'Layanan AI ini belum bisa mencari di web. Jawaban memakai materi dan pengetahuan model.'
       : !backendReady
-        ? 'Pencarian web belum aktif di server ini. Jawaban memakai materi dan pengetahuan model.'
+        ? 'Pencarian web belum aktif. Isi kunci Tavily di kolom bawah, atau isi TAVILY_API_KEY di server.'
         : 'Tutor boleh mencari web bila materi kurang. Sumber dan tanggal akses ditampilkan di bawah jawaban.';
     hint.textContent = text;
     hint.hidden = !text;
@@ -558,6 +559,40 @@ function renderEndpoints() {
 // (Base URL, nama, kunci). Satu-satunya jalur kelola endpoint di Pengaturan;
 // simpan memanggil connectEndpoint() — mode edit memakai id yang sama sehingga
 // kapabilitas seed (Gemini grounding / thinking) tetap terjaga.
+// Audit L-2: form dibangun sebagai DOM Node via buildEndpointForm() — nilai
+// baseUrl/key dari user tidak pernah melewati jalur innerHTML.
+function buildEndpointForm(p) {
+  const frag = document.createDocumentFragment();
+  const mk = (tag, cls) => { const el = document.createElement(tag); if (cls) el.className = cls; return el; };
+
+  const f1 = mk('div', 'field');
+  const l1 = mk('label', 'field__label'); l1.htmlFor = 'epEditUrl'; l1.textContent = 'Alamat API (URL)';
+  const i1 = mk('input', 'input'); i1.id = 'epEditUrl'; i1.type = 'text';
+  i1.value = p ? p.baseUrl : ''; i1.autocomplete = 'off'; i1.spellcheck = false;
+  const h1 = mk('p', 'field__hint');
+  h1.textContent = 'Contoh: https://openrouter.ai/api/v1 untuk layanan cloud, atau http://localhost:1234 untuk LM Studio di komputer ini. Pakai alamat API-nya, bukan alamat halaman dashboard.';
+  f1.append(l1, i1, h1);
+
+  const f2 = mk('div', 'field');
+  const l2 = mk('label', 'field__label'); l2.htmlFor = 'epEditName'; l2.textContent = 'Nama layanan';
+  const i2 = mk('input', 'input'); i2.id = 'epEditName'; i2.value = p ? p.name : '';
+  i2.autocomplete = 'off'; i2.spellcheck = false; i2.required = true;
+  f2.append(l2, i2);
+
+  const f3 = mk('div', 'field');
+  const l3 = mk('label', 'field__label'); l3.htmlFor = 'epEditKey'; l3.textContent = 'Kunci API';
+  const keyrow = mk('div', 'endpoint-edit__keyrow');
+  const i3 = mk('input', 'input endpoint-edit__key'); i3.id = 'epEditKey'; i3.type = 'password';
+  i3.value = p ? (p.key || '') : ''; i3.autocomplete = 'off'; i3.spellcheck = false;
+  const h3 = mk('p', 'field__hint');
+  h3.textContent = 'Kunci API adalah kode rahasia dari website penyedia. Disimpan di browser ini saja dan hanya dipakai untuk layanan ini. LM Studio lokal biasanya tidak butuh kunci.';
+  keyrow.append(i3);
+  f3.append(l3, keyrow, h3);
+
+  frag.append(f1, f2, f3);
+  return frag;
+}
+
 function openEndpointModal(id) {
   const isEdit = Boolean(id);
   const p = isEdit ? currentProviders()[id] : null;
@@ -566,25 +601,9 @@ function openEndpointModal(id) {
   const modalRef = showModal({
     title: isEdit ? 'Sunting layanan' : 'Tambah layanan',
     showClose: false,
-    body: `
-      <div class="field">
-        <label class="field__label" for="epEditUrl">Alamat API (URL)</label>
-        <input id="epEditUrl" class="input" type="text" value="${escapeAttr(isEdit ? p.baseUrl : '')}" placeholder="http://127.0.0.1:1234" autocomplete="off" spellcheck="false" />
-        <p class="field__hint">Contoh: <code>https://openrouter.ai/api/v1</code> untuk layanan cloud, atau <code>http://localhost:1234</code> untuk LM Studio di komputer ini. Pakai alamat API-nya, bukan alamat halaman dashboard.</p>
-      </div>
-      <div class="field">
-        <label class="field__label" for="epEditName">Nama layanan</label>
-        <input id="epEditName" class="input" type="text" value="${escapeAttr(isEdit ? p.name : '')}" placeholder="Bebas, mis. OpenRouter" required autocomplete="off" spellcheck="false" />
-      </div>
-      <div class="field">
-        <label class="field__label" for="epEditKey">Kunci API</label>
-        <div class="endpoint-edit__keyrow">
-          <input id="epEditKey" class="input endpoint-edit__key" type="password" value="${escapeAttr(isEdit ? p.key || '' : '')}" placeholder="Kunci API (opsional)" autocomplete="off" spellcheck="false" />
-          <button id="epEditKeyToggle" class="btn btn--ghost btn--sm" type="button" aria-label="Tampilkan/sembunyikan kunci">${EYE}</button>
-        </div>
-        <p class="field__hint">Kunci API adalah kode rahasia dari website penyedia (biasanya di menu <em>API keys</em>). Disimpan di browser ini saja dan hanya dipakai untuk layanan ini. LM Studio lokal biasanya tidak butuh kunci — namun bila <strong>Require Authentication</strong> aktif, buat token di <strong>Developer → Server Settings → Manage Tokens</strong> lalu tempel di sini.</p>
-      </div>
-    `,
+    // Audit L-2: body dibangun sebagai DOM Node (bukan string HTML) supaya
+    // nilai baseUrl/key dari user tidak pernah melewati jalur innerHTML.
+    body: buildEndpointForm(isEdit ? p : null),
     actions: [
       { label: 'Batal', kind: 'secondary', onClick: () => modalRef.close() },
       {
@@ -1645,6 +1664,7 @@ function hydrateSettings() {
   dom.level.value = String(state.settings.level);
   updateLevelLabel();
   dom.webSearchToggle.checked = state.settings.webSearch !== false;
+  if (dom.searchKeyInput) dom.searchKeyInput.value = getSearchKey();
   // Gaya bahasa (tone): Santai ↔ Formal.
   dom.toneButtons.forEach((btn) => {
     const active = btn.dataset.tone === state.settings.tone;
@@ -2262,6 +2282,12 @@ function bindEvents() {
     state.settings.model = dom.model.value;
     persistSettings();
   });
+  if (dom.searchKeyInput) {
+    dom.searchKeyInput.addEventListener('change', () => {
+      setSearchKey(dom.searchKeyInput.value);
+      refreshWebSearchUI();
+    });
+  }
   dom.webSearchToggle.addEventListener('change', () => {
     // Toggle hanya bermakna bila layanan & server benar-benar mendukung.
     if (!providerSupportsWebSearch() || !isSearchBackendReady()) {
