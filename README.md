@@ -1,8 +1,8 @@
 # BimbingKamu
 
-Tutor belajar Socratic berbasis RAG untuk siswa SMA Indonesia. Alih-alih langsung menjawab, BimbingKamu membimbingmu menemukan jawaban **dari materi milikmu sendiri** — lebih dalam dan lebih fokus, dengan halusinasi yang ditekan lewat batasan prompt dan penandaan kutipan yang tidak ditemukan di materi (bukan jaminan mutlak).
+Tutor belajar Socratic berbasis RAG untuk siswa. Alih-alih langsung menjawab, BimbingKamu membimbingmu menemukan jawaban **dari materi milikmu sendiri** lebih dalam dan lebih fokus, dengan halusinasi yang ditekan lewat batasan prompt dan penandaan kutipan yang tidak ditemukan di materi (bukan jaminan mutlak).
 
-Proyek ini memakai skema **BYOK** (Bring Your Own Key): kamu memasukkan kunci API *provider* milikmu — OpenRouter, Gemini AI Studio, atau OpenAI (dan endpoint lain yang kompatibel dengan OpenAI). Kunci hanya tersimpan di `localStorage` browser dan hanya dikirim ke endpoint yang kamu pilih; tidak ada backend, tidak ada server, tidak ada pelacakan.
+Proyek ini memakai skema **BYOK** (Bring Your Own Key): kamu memasukkan kunci API *provider* milikmu seperti OpenRouter, Gemini AI Studio, atau OpenAI (dan endpoint lain yang kompatibel dengan OpenAI). Kunci hanya tersimpan di `localStorage` browser dan hanya dikirim ke endpoint yang kamu pilih; tidak ada backend, tidak ada server, tidak ada pelacakan.
 
 ## Menjalankan
 
@@ -30,16 +30,6 @@ Bila belum punya endpoint, pilih salah satu provider bawaan di panel **Endpoint 
 
 > **Penting untuk siswa SMA:** periksa syarat penggunaan masing-masing provider (termasuk batas usia akun dan penggunaan data pada paket gratis). Jika siswa di bawah usia yang disyaratkan, guru atau orang tua sebaiknya menyediakan kunci.
 
-## Men-deploy
-
-Aplikasi ini sepenuhnya statis, dengan tiga Pages Function di `functions/api/`: `proxy.js` (proksi endpoint provider), `search.js` (pencarian web Tavily), dan `fetch.js` (membaca halaman untuk materi). Deploy lewat **Cloudflare Pages**:
-
-1. Hubungkan repository ini di dashboard Cloudflare Pages.
-2. Build command: `npm run build` (opsional — bundle sudah di-commit). Output directory: `/` (root repo).
-3. `functions/` dideteksi otomatis sebagai Pages Functions; `_headers` dan `_redirects` di root dipakai sebagai konfigurasi cache/keamanan dan SPA fallback.
-4. Di **Settings → Environment variables**, tambahkan secret `TAVILY_API_KEY` (dari [tavily.com](https://tavily.com)). Tanpa kunci ini aplikasi tetap jalan, tetapi toggle pencarian web dimatikan dan tutor menjawab dari materi/pengetahuan model.
-
-Pastikan path relatif tetap utuh (struktur folder `css/`, `js/`, `assets/` tidak boleh diubah). Untuk uji lokal dengan Pages Function: `TAVILY_API_KEY=... npx wrangler pages dev .`.
 
 ## Daftar fitur
 
