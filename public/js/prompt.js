@@ -214,6 +214,32 @@ export function buildMaterialMessage(materi, webSearch = false, maxBytes = 60 * 
   return { role: 'user', content: materiBlock(content, webSearch) };
 }
 
+// ===== BLOK HASIL PENCARIAN WEB SEBAGAI PESAN TERPISAH =====
+// Hasil pencarian web (dijalankan di sisi app) dikemas sebagai pesan `user` berisi
+// daftar bernomor [n] — nomor ini = penanda sitasi yang model tulis di badan jawaban.
+// Dipisah dari instruksi (system) memperkuat anti-injeksi: data di `user`, aturan di `system`.
+// Mengembalikan null bila tak ada hasil, agar tak ada blok kosong yang membingungkan.
+export function buildSearchMessage(results = []) {
+  const list = (results || []).filter((r) => r && r.url);
+  if (!list.length) return null;
+  const body = list.map((r, i) =>
+    `[${i + 1}] ${r.title || r.url}\nURL: ${r.url}\nCuplikan: ${r.snippet || ''}\nTerbit: ${r.publishedDate || 'tanpa tanggal'}`
+  ).join('\n\n');
+  const longest = (body.match(/`+/g) || []).reduce((m, run) => Math.max(m, run.length), 0);
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  return {
+    role: 'user',
+    content: [
+      '## HASIL PENCARIAN WEB',
+      'Berikut hasil pencarian web untuk pertanyaanmu. Nomor [n] = penanda sitasi yang kamu tulis di jawaban. Materi tetap sumber utama; bila hasil web bertentangan, materi menang.',
+      '',
+      fence,
+      body,
+      fence,
+    ].join('\n'),
+  };
+}
+
 // Pertahankan paragraf utuh dari awal sampai budget maxBytes tercapai, lalu beri
 // penanda pemkasan agar model tahu data dibatasi (bukan selesai). Dipakai untuk
 // mencegah request terlalu besar (HTTP 413) saat materi upload sangat tebal.
@@ -255,7 +281,7 @@ export function buildSystemPrompt({
       ? '1. Pola mengajar: JELASKAN TUNTAS. Sampaikan penjelasan lengkap dan runtut (apa, mengapa, bagaimana, contoh/analogi) dalam satu balasan; pertanyaan cek pemahaman di akhir hanya opsional, bukan wajib.'
       : '1. Pola mengajar: JELASKAN lebih dulu, baru tanyakan. Berikan penjelasan yang cukup rinci berbasis materi (dengan alasan dan contoh), lalu tutup dengan HANYA SATU pertanyaan untuk mengecek pemahaman. Jangan hanya bertanya tanpa menjelaskan, dan jangan menumpuk banyak pertanyaan.',
     webSearch
-      ? '2. Kamu punya alat `web_search`. Panggil HANYA bila materi siswa tidak cukup untuk menjawab (mis. definisi, fakta, atau contoh terbaru). Materi tetap sumber UTAMA; bila hasil web bertentangan dengan materi, materi menang. Jangan mengarang hasil pencarian: bila alat tidak dipanggil atau tidak mengembalikan hasil, jawab dari materi/pengetahuanmu dan katakan terus terang bahwa itu tanpa sumber web.'
+      ? '2. Hasil pencarian web (bila ada) sudah disematkan di blok "HASIL PENCARIAN WEB" pada pesan materi di bawah. Materi tetap sumber UTAMA; bila hasil web bertentangan, materi menang. Gunakan hasil web untuk memperkaya jawaban, lalu sitasi dengan nomor [1], [2], dst. sesuai urutan daftar — jangan mengarang sumber yang tidak ada di blok itu. Bila blok HASIL PENCARIAN WEB kosong atau tidak ada, jawab dari materi dan pengetahuanmu, dan katakan terus terang bahwa itu tanpa sumber web.'
       : '2. Materi adalah SATU-SATUNYA sumber kebenaran. Kamu TIDAK punya akses internet dan TIDAK bisa mencari di web pada sesi ini — jangan pernah bilang sudah mencari, membuka situs, atau mengecek sumber online. Jika pertanyaan di luar materi, bilang dengan sopan lalu arahkan kembali ke materi.',
     '3. Pada balasan pembuka, tunjukkan topik yang kamu temukan di materi (pakai frasa dari materi), lalu tanyakan pemahaman awal siswa.',
     '4. Jika siswa keliru, jangan menyalahkan. Tunjukkan bagian mana yang meleset, jelaskan koreksinya dengan singkat, lalu tanyakan ulang.',

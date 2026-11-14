@@ -373,6 +373,7 @@ export function removeTyping(el) {
 // yaitu sebelum token pertama muncul. Kembalikan elemen .typing agar bisa dihapus.
 // Teks status bertahap untuk indikator typing (logika murni, untuk diuji).
 export function typingStatusText(stage) {
+  if (stage === 'thinking') return 'Sedang berpikir…';
   return stage === 'answering' ? 'Sedang menjawab…' : 'Menghubungkan ke AI…';
 }
 

@@ -13,8 +13,8 @@ import { retrieveWithScores, joinScoredChunks } from './rag.js';
 import { planRedo, applyRedo, planEditRegenerations } from './redo.js';
 import { extractPdfText } from './pdf.js';
 import { extractDocxText } from './docx.js';
-import { buildSystemPrompt, buildMaterialMessage, buildOpeningPrompt } from './prompt.js';
-import { checkSearchBackend, isSearchBackendReady, getSearchKey, setSearchKey } from './search.js';
+import { buildSystemPrompt, buildMaterialMessage, buildOpeningPrompt, buildSearchMessage } from './prompt.js';
+import { checkSearchBackend, isSearchBackendReady, getSearchKey, setSearchKey, searchWeb, MAX_RESULTS } from './search.js';
 import { fetchUrlMaterial } from './url-material.js';
 import {
   createSession,
@@ -1220,7 +1220,8 @@ async function generateGreeting() {
       contextMessages: materialContext(buildMateri(), false),
       customProviders: state.settings.providers || [],
       signal: abortCtl.signal,
-      onDelta: (acc) => {
+      onDelta: (acc, phase) => {
+        if (phase === 'thinking') return; // thinking tak ditampilkan (indikator greeting sudah dihapus)
         streamed = true;
         const words = (acc.match(/\S+/g) || []).length;
         const now = performance.now();
@@ -1330,7 +1331,10 @@ async function sendUserMessage(rawText, opts = {}) {
     abortCtl = new AbortController();
     let streamed = false;
     let lastRenderAt = 0, renderedWords = 0; // throttle paint streaming (token-by-token)
-    const { text: reply, tokens, sources, search } = await providerChat(state.settings.provider, {
+    // Option A: pencarian web di sisi app (SEBELUM model) → hasil pasti dipakai, tak
+    // lagi bergantung model mau memanggil alat; sources & search diambil dari sini.
+    const web = webNow ? await runWebSearch(text, abortCtl.signal) : null;
+    const resp = await providerChat(state.settings.provider, {
       apiKey: activeApiKey(),
       model: state.settings.model,
       systemPrompt: buildSystemPrompt({
@@ -1343,11 +1347,20 @@ async function sendUserMessage(rawText, opts = {}) {
       }),
       contents,
       thinkingLevel: thinkingLevelFor(),
-      grounding: webNow,
-      contextMessages: materialContext(buildMateriFor(text), webNow),
+      grounding: false, // tak lampirkan tool: model tak bisa klaim "sudah mencari" palsu
+      contextMessages: [
+        ...materialContext(buildMateriFor(text), webNow),
+        ...(webNow ? (buildSearchMessage(web.results) || []) : []),
+      ],
       customProviders: state.settings.providers || [],
       signal: abortCtl.signal,
-      onDelta: (acc) => {
+      onDelta: (acc, phase) => {
+        if (phase === 'thinking') {
+          // Model masih berpikir (reasoning_content): jangan render ke bubble
+          // dan jangan hapus indikator typing — cukup perbarui statusnya.
+          if (typing.status) typing.status.textContent = typingStatusText('thinking');
+          return;
+        }
         if (!streamed) {
           streamed = true;
           // Mulai alir token → hapus indikator loading (dots/status/caret);
@@ -1367,6 +1380,10 @@ async function sendUserMessage(rawText, opts = {}) {
         }
       },
     });
+    const { text: reply, tokens } = resp;
+    // sources & search dari pencarian app-side (bukan dari respons model).
+    const sources = webNow && web ? web.results : resp.sources;
+    const search = webNow && web ? web.search : resp.search;
     const modelMsg = {
       role: 'model',
       text: reply,
@@ -1490,7 +1507,8 @@ async function regenerateLast() {
 
   try {
     const webNow = effectiveWebSearch();
-    const { text: reply, tokens, sources, search } = await providerChat(state.settings.provider, {
+    const web = webNow ? await runWebSearch(lastUserQuery(plan.contents), null) : null;
+    const resp = await providerChat(state.settings.provider, {
       apiKey: activeApiKey(),
       model: state.settings.model,
       systemPrompt: buildSystemPrompt({
@@ -1503,10 +1521,16 @@ async function regenerateLast() {
       }),
       contents: plan.contents,
       thinkingLevel: thinkingLevelFor(),
-      grounding: webNow,
-      contextMessages: materialContext(buildMateri(), webNow),
+      grounding: false, // tak lampirkan tool: model tak bisa klaim "sudah mencari" palsu
+      contextMessages: [
+        ...materialContext(buildMateri(), webNow),
+        ...(webNow ? (buildSearchMessage(web.results) || []) : []),
+      ],
       customProviders: state.settings.providers || [],
     });
+    const { text: reply, tokens } = resp;
+    const sources = webNow && web ? web.results : resp.sources;
+    const search = webNow && web ? web.search : resp.search;
     removeTyping(typing);
     const prev = state.messages[plan.modelIndex];
     // tangkap tokens → simpan ke metadata (footer + updateStats ikut).
@@ -1578,12 +1602,19 @@ async function regenerateFrom(editIdx) {
     for (const reg of regs) {
       // providerChat → { text, tokens, sources, search } (path OpenAI-generic).
       const webNow = effectiveWebSearch();
-      const { text: reply, tokens, sources, search } = await providerChat(state.settings.provider, {
+      const web = webNow ? await runWebSearch(lastUserQuery(reg.contents), null) : null;
+      const resp = await providerChat(state.settings.provider, {
         apiKey: activeApiKey(), model: state.settings.model, systemPrompt: systemPrompt(),
         contents: reg.contents, thinkingLevel: thinkingLevelFor(),
-        grounding: webNow, customProviders: state.settings.providers || [],
-        contextMessages: materialContext(buildMateri(), webNow),
+        grounding: false, customProviders: state.settings.providers || [],
+        contextMessages: [
+          ...materialContext(buildMateri(), webNow),
+          ...(webNow ? (buildSearchMessage(web.results) || []) : []),
+        ],
       });
+      const { text: reply, tokens } = resp;
+      const sources = webNow && web ? web.results : resp.sources;
+      const search = webNow && web ? web.search : resp.search;
       const prev = state.messages[reg.modelIndex];
       // tangkap tokens → simpan ke metadata (footer + updateStats ikut).
       state.messages[reg.modelIndex] = {
@@ -1719,6 +1750,39 @@ function buildMateriFor(query) {
 function materialContext(materi, webSearch = false) {
   const msg = buildMaterialMessage(materi, webSearch);
   return msg ? [msg] : [];
+}
+
+// Option A — retrieval di sisi app: jalankan pencarian web SEBELUM memanggil model,
+// lalu kemas hasilnya sebagai { results, search }. Dipakai jalur jawaban (kirim /
+// regenerasi / sunting). Gagal tak fatal: model tetap menjawab dari materi; status
+// dicatat agar UI jujur (ran:false bila tak ada kueri, error bila pencarian gagal).
+// AbortError diteruskan agar tombol Berhenti menghentikan seluruh giliran.
+async function runWebSearch(query, signal) {
+  if (!query) return { results: [], search: { requested: true, supported: true, ran: false } };
+  try {
+    const found = await searchWeb(query, { limit: MAX_RESULTS, signal });
+    return {
+      results: found.results,
+      search: { requested: true, supported: true, ran: true, count: found.results.length, cached: found.cached },
+    };
+  } catch (err) {
+    if (err && err.name === 'AbortError') throw err;
+    return {
+      results: [],
+      search: { requested: true, supported: true, ran: true, count: 0, error: (err && err.message) || 'pencarian gagal' },
+    };
+  }
+}
+
+// Kueri pencarian = teks pesan user terakhir dari daftar konten. Dipakai jalur
+// regenerasi/sunting yang tidak punya input baru (pertanyaannya = user terdahulu).
+function lastUserQuery(contents) {
+  if (!Array.isArray(contents)) return '';
+  for (let i = contents.length - 1; i >= 0; i -= 1) {
+    const m = contents[i];
+    if (m && m.role === 'user' && typeof m.text === 'string' && m.text.trim()) return m.text.trim();
+  }
+  return '';
 }
 
 function renderMateriFiles() {

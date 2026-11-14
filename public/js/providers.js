@@ -1464,7 +1464,9 @@ export async function readSSE(res, onDelta, signal) {
     if (typeof delta === 'string' && delta) { text += delta; onDelta(text); }
     else if (typeof rdelta === 'string' && rdelta) {
       reasoning += rdelta;
-      if (!text) onDelta(reasoning); // hanya jika endpoint tak mengirim content
+      // Penanda 'thinking' → app menampilkan status "Sedang berpikir…" tanpa
+      // meng-render ke bubble jawaban (thinking bukan respon aslinya).
+      if (!text) onDelta(reasoning, 'thinking'); // hanya jika endpoint tak mengirim content
     }
     // Alat yang dipanggil model datang bertahap: index menentukan slot, nama dan
     // argumen JSON diakumulasi per slot sampai selesai.
